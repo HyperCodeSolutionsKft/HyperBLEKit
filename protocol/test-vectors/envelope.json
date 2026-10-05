@@ -1,0 +1,209 @@
+{
+  "description": "Canonical message-envelope vectors shared by the Android and iOS libraries. 'decode': parse `json` and expect v/type/seq/from/ts and a `data` object equal to the parsed `dataJson` (JSON key order is not significant on the wire). 'roundTrip': build an envelope from the fields, encode it, decode it again, and expect the same fields back. 'invalidDecode': `json` strings that must be rejected with a decode error. An unknown `type` is NOT rejected: both platforms decode it to a tolerated 'unknown' message that keeps the type and an empty data object (wire specification: 'Unknown fields are ignored'). `ts` is an Int64 in milliseconds.",
+  "decode": [
+    {
+      "name": "join_request",
+      "json": "{\"v\":1,\"type\":\"JOIN_REQUEST\",\"seq\":1,\"from\":\"?\",\"ts\":1759415400000,\"data\":{\"name\":\"Anna\",\"platform\":\"ios\",\"deviceId\":\"a1b2c3\",\"canHost\":true}}",
+      "v": 1,
+      "type": "JOIN_REQUEST",
+      "seq": 1,
+      "from": "?",
+      "ts": 1759415400000,
+      "dataJson": "{\"name\":\"Anna\",\"platform\":\"ios\",\"deviceId\":\"a1b2c3\",\"canHost\":true}"
+    },
+    {
+      "name": "join_accept",
+      "json": "{\"v\":1,\"type\":\"JOIN_ACCEPT\",\"seq\":1,\"from\":\"p1\",\"ts\":1759415400050,\"data\":{\"playerId\":\"p2\",\"stateVersion\":2}}",
+      "v": 1,
+      "type": "JOIN_ACCEPT",
+      "seq": 1,
+      "from": "p1",
+      "ts": 1759415400050,
+      "dataJson": "{\"playerId\":\"p2\",\"stateVersion\":2}"
+    },
+    {
+      "name": "player_list_with_nested_array",
+      "json": "{\"v\":1,\"type\":\"PLAYER_LIST\",\"seq\":3,\"from\":\"p1\",\"ts\":1759415400060,\"data\":{\"event\":\"joined\",\"playerId\":\"p2\",\"stateVersion\":2,\"players\":[{\"id\":\"p1\",\"name\":\"Host\",\"platform\":\"android\",\"connected\":true,\"canHost\":true},{\"id\":\"p2\",\"name\":\"Anna\",\"platform\":\"ios\",\"connected\":true,\"canHost\":true}]}}",
+      "v": 1,
+      "type": "PLAYER_LIST",
+      "seq": 3,
+      "from": "p1",
+      "ts": 1759415400060,
+      "dataJson": "{\"event\":\"joined\",\"playerId\":\"p2\",\"stateVersion\":2,\"players\":[{\"id\":\"p1\",\"name\":\"Host\",\"platform\":\"android\",\"connected\":true,\"canHost\":true},{\"id\":\"p2\",\"name\":\"Anna\",\"platform\":\"ios\",\"connected\":true,\"canHost\":true}]}"
+    },
+    {
+      "name": "ping",
+      "json": "{\"v\":1,\"type\":\"PING\",\"seq\":50,\"from\":\"p1\",\"ts\":1759415610000,\"data\":{\"pingTs\":1759415610000}}",
+      "v": 1,
+      "type": "PING",
+      "seq": 50,
+      "from": "p1",
+      "ts": 1759415610000,
+      "dataJson": "{\"pingTs\":1759415610000}"
+    },
+    {
+      "name": "ignores_unknown_fields",
+      "json": "{\"v\":1,\"type\":\"ACK\",\"seq\":7,\"from\":\"p2\",\"ts\":1759415470100,\"data\":{\"ackSeq\":16},\"somethingNew\":123}",
+      "v": 1,
+      "type": "ACK",
+      "seq": 7,
+      "from": "p2",
+      "ts": 1759415470100,
+      "dataJson": "{\"ackSeq\":16}"
+    },
+    {
+      "name": "unknown_type_is_tolerated_not_rejected",
+      "json": "{\"v\":1,\"type\":\"FOO\",\"seq\":1,\"from\":\"p1\",\"ts\":1,\"data\":{}}",
+      "v": 1,
+      "type": "FOO",
+      "seq": 1,
+      "from": "p1",
+      "ts": 1,
+      "dataJson": "{}"
+    }
+  ],
+  "roundTrip": [
+    {
+      "name": "join_request",
+      "v": 1,
+      "type": "JOIN_REQUEST",
+      "seq": 1,
+      "from": "?",
+      "ts": 1759415400000,
+      "dataJson": "{\"name\":\"Anna\",\"platform\":\"ios\",\"deviceId\":\"a1b2c3\"}"
+    },
+    {
+      "name": "ping",
+      "v": 1,
+      "type": "PING",
+      "seq": 50,
+      "from": "p1",
+      "ts": 1759415610000,
+      "dataJson": "{\"pingTs\":1759415610000}"
+    },
+    {
+      "name": "game_state",
+      "v": 1,
+      "type": "GAME_STATE",
+      "seq": 16,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"stateVersion\":7,\"phase\":\"playing\",\"game\":\"counter\",\"view\":{\"total\":3,\"turn\":\"p2\",\"finished\":false}}"
+    },
+    {
+      "name": "game_state_back_to_lobby",
+      "v": 1,
+      "type": "GAME_STATE",
+      "seq": 95,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"stateVersion\":40,\"phase\":\"lobby\"}"
+    },
+    {
+      "name": "game_action",
+      "v": 1,
+      "type": "GAME_ACTION",
+      "seq": 6,
+      "from": "p2",
+      "ts": 1759415470040,
+      "dataJson": "{\"game\":\"counter\",\"action\":{\"add\":1}}"
+    },
+    {
+      "name": "error",
+      "v": 1,
+      "type": "ERROR",
+      "seq": 23,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"refSeq\":8,\"code\":\"not_your_turn\",\"reason\":\"it is p3's turn\"}"
+    },
+    {
+      "name": "error_without_reason",
+      "v": 1,
+      "type": "ERROR",
+      "seq": 24,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"refSeq\":9,\"code\":\"no_game\"}"
+    },
+    {
+      "name": "sync_request",
+      "v": 1,
+      "type": "SYNC_REQUEST",
+      "seq": 9,
+      "from": "p2",
+      "ts": 1759415470040,
+      "dataJson": "{\"haveVersion\":10}"
+    },
+    {
+      "name": "host_ping_with_state_version",
+      "v": 1,
+      "type": "PING",
+      "seq": 50,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"pingTs\":1759415610000,\"stateVersion\":12}"
+    },
+    {
+      "name": "state_sync_in_lobby",
+      "v": 1,
+      "type": "STATE_SYNC",
+      "seq": 2,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"state\":{\"gameId\":\"7K2F\",\"stateVersion\":2,\"phase\":\"lobby\",\"players\":[{\"id\":\"p1\",\"name\":\"Host\",\"platform\":\"android\",\"connected\":true,\"canHost\":true},{\"id\":\"p2\",\"name\":\"Anna\",\"platform\":\"ios\",\"connected\":true,\"canHost\":true}],\"hostId\":\"p1\",\"hostEpoch\":1}}"
+    },
+    {
+      "name": "state_sync_with_game",
+      "v": 1,
+      "type": "STATE_SYNC",
+      "seq": 24,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"state\":{\"gameId\":\"7K2F\",\"stateVersion\":12,\"phase\":\"playing\",\"players\":[{\"id\":\"p1\",\"name\":\"Host\",\"platform\":\"android\",\"connected\":true,\"canHost\":true},{\"id\":\"p2\",\"name\":\"Anna\",\"platform\":\"ios\",\"connected\":true,\"canHost\":true}],\"hostId\":\"p1\",\"hostEpoch\":1},\"game\":\"counter\",\"view\":{\"total\":3,\"turn\":\"p2\",\"finished\":false}}"
+    },
+    {
+      "name": "host_snapshot_with_game",
+      "v": 1,
+      "type": "HOST_SNAPSHOT",
+      "seq": 31,
+      "from": "p1",
+      "ts": 1759415470040,
+      "dataJson": "{\"state\":{\"gameId\":\"7K2F\",\"stateVersion\":12,\"phase\":\"playing\",\"players\":[{\"id\":\"p1\",\"name\":\"Host\",\"platform\":\"android\",\"connected\":true,\"canHost\":true},{\"id\":\"p2\",\"name\":\"Anna\",\"platform\":\"ios\",\"connected\":true,\"canHost\":true}],\"hostId\":\"p1\",\"hostEpoch\":1},\"seats\":{\"p1\":{\"deviceId\":\"f0e1d2\"},\"p2\":{\"deviceId\":\"a1b2c3\"}},\"successors\":[\"p2\"],\"game\":\"counter\",\"gameState\":{\"total\":3,\"turn\":\"p2\",\"order\":[\"p1\",\"p2\"],\"finished\":false}}"
+    }
+  ],
+  "invalidDecode": [
+    {
+      "name": "not_json",
+      "json": "not json"
+    },
+    {
+      "name": "json_array_not_object",
+      "json": "[1,2,3]"
+    },
+    {
+      "name": "missing_v",
+      "json": "{\"type\":\"PING\",\"seq\":1,\"from\":\"p1\",\"ts\":1}"
+    },
+    {
+      "name": "missing_type",
+      "json": "{\"v\":1,\"seq\":1,\"from\":\"p1\",\"ts\":1,\"data\":{}}"
+    },
+    {
+      "name": "known_type_missing_required_field",
+      "json": "{\"v\":1,\"type\":\"PING\",\"seq\":1,\"from\":\"p1\",\"ts\":1,\"data\":[1,2]}"
+    },
+    {
+      "name": "game_action_missing_action",
+      "json": "{\"v\":1,\"type\":\"GAME_ACTION\",\"seq\":1,\"from\":\"p2\",\"ts\":1,\"data\":{\"game\":\"counter\"}}"
+    },
+    {
+      "name": "game_state_missing_phase",
+      "json": "{\"v\":1,\"type\":\"GAME_STATE\",\"seq\":1,\"from\":\"p1\",\"ts\":1,\"data\":{\"stateVersion\":3}}"
+    },
+    {
+      "name": "error_missing_code",
+      "json": "{\"v\":1,\"type\":\"ERROR\",\"seq\":1,\"from\":\"p1\",\"ts\":1,\"data\":{\"refSeq\":3}}"
+    }
+  ]
+}

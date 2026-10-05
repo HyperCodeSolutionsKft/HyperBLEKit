@@ -1,0 +1,18 @@
+# Swift Package Manager and Xcode package state
+.build/
+.swiftpm/
+xcuserdata/
+
+# Gradle and Android Studio
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+
+# The Gradle wrapper must be committed (a global ignore rule may hide "wrapper" folders)
+!**/gradle/wrapper/
+!**/gradle/wrapper/*
+
+.DS_Store

@@ -1,0 +1,49 @@
+{
+  "description": "Canonical chunk-framing vectors shared by the Android and iOS libraries. Each 'split' case feeds `message` through a fresh Chunker (so msgId starts at 0) with the given `maxChunkLength` (max bytes per write/notify, header included) and must produce exactly `chunks`. Each 'roundTrip' case splits `message` and feeds the chunks back through a fresh Reassembler, which must return `message` on the final chunk and null before. All byte values are 0-255. See the wire specification, 'MTU and chunking'.",
+  "chunkHeaderSize": 3,
+  "split": [
+    {
+      "name": "small_message_is_one_chunk_with_header",
+      "maxChunkLength": 20,
+      "message": [104, 101, 108, 108, 111],
+      "chunks": [[0, 0, 1, 104, 101, 108, 108, 111]]
+    },
+    {
+      "name": "empty_message_is_one_header_only_chunk",
+      "maxChunkLength": 20,
+      "message": [],
+      "chunks": [[0, 0, 1]]
+    },
+    {
+      "name": "splits_at_payload_boundary",
+      "maxChunkLength": 8,
+      "message": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      "chunks": [
+        [0, 0, 3, 0, 1, 2, 3, 4],
+        [0, 1, 3, 5, 6, 7, 8, 9],
+        [0, 2, 3, 10, 11]
+      ]
+    },
+    {
+      "name": "exact_multiple_has_no_empty_trailing_chunk",
+      "maxChunkLength": 8,
+      "message": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "chunks": [
+        [0, 0, 2, 0, 1, 2, 3, 4],
+        [0, 1, 2, 5, 6, 7, 8, 9]
+      ]
+    }
+  ],
+  "roundTrip": [
+    {
+      "name": "single_chunk_round_trip",
+      "maxChunkLength": 20,
+      "message": [104, 101, 108, 108, 111]
+    },
+    {
+      "name": "multi_chunk_round_trip",
+      "maxChunkLength": 8,
+      "message": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    }
+  ]
+}
