@@ -467,6 +467,35 @@ final class RuntimeEndToEndTests: XCTestCase {
         c.kit.leave()
     }
 
+    func testPingAllReportsEveryConnectedClientInSeatOrder() {
+        let (a, b, c, sessionA, _, _) = threePhonesInTheLobby()
+        sessionA.diagnostics.pingAll()
+        // The diagnostics are published one run-loop turn later. While the 2 s round is open it
+        // lists both clients with no times yet.
+        settle(0.05)
+        XCTAssertEqual(sessionA.diagnostics.pingAllResult?.pending, true)
+        XCTAssertEqual(sessionA.diagnostics.pingAllResult?.replies.map(\.playerId), ["p2", "p3"])
+        waitUntil("the ping-all round finishes") {
+            sessionA.diagnostics.pingAllResult?.pending == false
+        }
+        let replies = sessionA.diagnostics.pingAllResult!.replies
+        XCTAssertEqual(replies.map(\.playerId), ["p2", "p3"])
+        XCTAssertTrue(replies.allSatisfy { $0.rttMs != nil }, "every connected client should answer the ping-all")
+        a.kit.leave()
+        b.kit.leave()
+        c.kit.leave()
+    }
+
+    func testPingAllOnAClientDoesNothing() {
+        let (a, b, c, _, sessionB, _) = threePhonesInTheLobby()
+        sessionB.diagnostics.pingAll()
+        settle()
+        XCTAssertNil(sessionB.diagnostics.pingAllResult, "ping-all is host-only; a client must not report a result")
+        a.kit.leave()
+        b.kit.leave()
+        c.kit.leave()
+    }
+
     func testClosingTheKitLeavesAndStopsDiscovery() {
         let a = phone("Anna"), b = phone("Bence")
         let sessionA = a.kit.host()

@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import io.hypercode.hyperblekit.ConnectionPriority
 import io.hypercode.hyperblekit.GameCode
 import io.hypercode.hyperblekit.log.HyperBleLog
 import io.hypercode.hyperblekit.log.LogLevel
@@ -69,6 +70,8 @@ internal class BleClientTransport(
     context: Context,
     private val uuids: BleUuids,
     private val localNamePrefix: String,
+    /** The connection priority this client requests after connecting; read at each connection. */
+    private val connectionPriority: () -> ConnectionPriority = { ConnectionPriority.HIGH },
 ) : GameClientTransport {
 
     private enum class Phase { IDLE, SEARCHING, CONNECTING, NEGOTIATING_MTU, DISCOVERING, READING_GAME_INFO, SUBSCRIBING, READY }
@@ -536,12 +539,19 @@ internal class BleClientTransport(
         cancelConnectTimeout()
         stopSearchScan()
         // Setup is done, so the parameter update cannot get in the way of discovery.
+        val priority = connectionPriority()
         val prioritized = guarded("requestConnectionPriority") {
-            gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+            gatt.requestConnectionPriority(priority.toGattValue())
         }
-        HyperBleLog.event("connection priority HIGH requested: ${prioritized == true}")
+        HyperBleLog.event("connection priority $priority requested: ${prioritized == true}")
         phase = Phase.READY
         listener?.invoke(ClientTransportEvent.Ready(BleConstants.maxChunkLength(mtu)))
+    }
+
+    private fun ConnectionPriority.toGattValue(): Int = when (this) {
+        ConnectionPriority.HIGH -> BluetoothGatt.CONNECTION_PRIORITY_HIGH
+        ConnectionPriority.BALANCED -> BluetoothGatt.CONNECTION_PRIORITY_BALANCED
+        ConnectionPriority.LOW_POWER -> BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER
     }
 
     /**

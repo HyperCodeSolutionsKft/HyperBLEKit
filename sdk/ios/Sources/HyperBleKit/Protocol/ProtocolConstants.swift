@@ -54,4 +54,8 @@ enum ProtocolConstants {
 
     /// The debug log keeps this many lines and drops the oldest.
     static let debugLogCapacity = 500
+
+    /// An on-demand ping-all (`SessionDiagnostics.pingAll()`) waits this long for the clients'
+    /// PONGs before it reports the round trips; a client that stayed silent gets no time.
+    static let pingAllTimeout: TimeInterval = 2
 }

@@ -137,6 +137,18 @@ struct HostSession {
     private var linkChunkLengths: [LinkID: Int] = [:]
     private var realtimeClock = RealtimeClock()
 
+    /// One on-demand ping-all in progress (see `pingAll(at:)` / `finishPingAll()`). `expected`
+    /// are the clients pinged and `answers` fills with their round trips as PONGs arrive.
+    /// `sendTs` is the ping's `pingTs`, so only the PONGs of this round are counted.
+    private struct PingAllRound {
+        let sendTs: Int64
+        let expected: [String]
+        var answers: [String: Int] = [:]
+    }
+
+    /// The ping-all round in progress (`pingAll(at:)`); nil when none is running.
+    private var pingAllRound: PingAllRound?
+
     /// A new game: this device is `p1`, alone in the lobby.
     init(gameId: String, hostName: String, deviceId: String, maxPlayers: Int = ProtocolConstants.maxPlayers) {
         self.gameId = gameId
@@ -382,6 +394,36 @@ struct HostSession {
         }
     }
 
+    /// Pings every linked client at once and starts collecting their round trips, for an
+    /// on-demand liveness and latency check (`SessionDiagnostics.pingAll()`). The answers arrive
+    /// as PONGs like any ping; read them with `finishPingAll()` after a short wait. A new call
+    /// replaces any round still open.
+    mutating func pingAll(at now: Date) -> Output {
+        var output = Output()
+        let everyone = linkedClients
+        guard !everyone.isEmpty else {
+            pingAllRound = nil
+            output.notes.append("ping_all: no linked client to ping")
+            return output
+        }
+        let expected = seats.filter { $0.link != nil }.map(\.player.id)
+        pingAllRound = PingAllRound(sendTs: now.wireMillis, expected: expected)
+        let ping = makeMessage(.ping(Heartbeat(pingTs: now.wireMillis, stateVersion: stateVersion)), now: now)
+        output.outgoing.append(Outgoing(message: ping, recipients: everyone))
+        output.notes.append("ping_all: pinged \(expected.count) client(s)")
+        return output
+    }
+
+    /// Ends the ping-all started by `pingAll(at:)` and returns one reply per pinged client, in
+    /// seat order; a client that did not answer has a nil time. Empty when no round was open.
+    mutating func finishPingAll() -> [PingReply] {
+        guard let round = pingAllRound else { return [] }
+        pingAllRound = nil
+        return round.expected
+            .sorted { Player.seatNumber(of: $0) < Player.seatNumber(of: $1) }
+            .map { PingReply(playerId: $0, rttMs: round.answers[$0]) }
+    }
+
     /// Starts a game for everyone who is connected. Allowed in the lobby and after a finished
     /// game. `random` is the game's only source of randomness.
     mutating func startGame<R: RandomNumberGenerator>(_ module: GameModule, at now: Date,
@@ -523,6 +565,11 @@ struct HostSession {
             if roundTrip >= 0 {
                 pingStats.record(roundTrip)
                 output.roundTripMs = roundTrip
+                if var round = pingAllRound,
+                   heartbeat.pingTs == round.sendTs, round.expected.contains(seats[index].player.id) {
+                    round.answers[seats[index].player.id] = roundTrip
+                    pingAllRound = round
+                }
             }
         case .ack:
             // The host never resends: a client that missed something asks for a STATE_SYNC.

@@ -1,6 +1,7 @@
 package io.hypercode.hyperblekit.session
 
 import io.hypercode.hyperblekit.PingStats
+import io.hypercode.hyperblekit.PingReply
 import io.hypercode.hyperblekit.GameConstants
 import io.hypercode.hyperblekit.game.GameInstance
 import io.hypercode.hyperblekit.game.GameModule
@@ -110,6 +111,15 @@ internal class HostSession private constructor(
         var removeAtMillis: Long? = null
     }
 
+    /**
+     * One ping-all in progress (see [pingAll] / [finishPingAll]). [expected] are the clients pinged
+     * and [answers] fills with their round trips as `PONG`s arrive. [sendTs] is the ping's `pingTs`,
+     * so only the `PONG`s of this round are counted.
+     */
+    private class PingAllRound(val sendTs: Long, val expected: List<String>) {
+        val answers = mutableMapOf<String, Long>()
+    }
+
     val hostId: String get() = host.id
 
     /** 1 = just the first host in the lobby. */
@@ -129,6 +139,9 @@ internal class HostSession private constructor(
     val ownView: JsonPayload? get() = viewFor(host.id)
     var pingStats = PingStats()
         private set
+
+    /** The ping-all round in progress ([pingAll]); null when none is running. */
+    private var pingAllRound: PingAllRound? = null
 
     /** Every seat but the host's own, ordered by seat number. */
     private val seats = initialSeats.toMutableList()
@@ -356,6 +369,39 @@ internal class HostSession private constructor(
     }
 
     /**
+     * Pings every linked client at once and starts collecting their round trips, for an on-demand
+     * liveness and latency check (`SessionDiagnostics.pingAll`). The answers arrive as `PONG`s like
+     * any ping; read them with [finishPingAll] after a short wait. A new call replaces any round
+     * still open.
+     */
+    fun pingAll(nowMillis: Long): Output {
+        val output = Output()
+        val everyone = recipients(seats)
+        if (everyone.isEmpty()) {
+            pingAllRound = null
+            output.notes += "ping_all: no linked client to ping"
+            return output
+        }
+        val expected = seats.filter { it.link != null }.map { it.player.id }
+        pingAllRound = PingAllRound(nowMillis, expected)
+        output.outgoing += Outgoing(makeMessage(Message.Body.Ping(nowMillis, stateVersion), nowMillis), everyone)
+        output.notes += "ping_all: pinged ${expected.size} client(s)"
+        return output
+    }
+
+    /**
+     * Ends the ping-all started by [pingAll] and returns one reply per pinged client, in seat
+     * order; a client that did not answer has a null time. Empty when no round was open.
+     */
+    fun finishPingAll(): List<PingReply> {
+        val round = pingAllRound ?: return emptyList()
+        pingAllRound = null
+        return round.expected
+            .sortedBy { seatNumber(it) }
+            .map { PingReply(it, round.answers[it]) }
+    }
+
+    /**
      * The host starts a game of [module], from the lobby or after a finished game. Everyone who is
      * connected right now plays, in ascending seat order. If [module] does not support that many
      * players, or it is a real-time game whose largest world frame does not fit every player's
@@ -500,6 +546,11 @@ internal class HostSession private constructor(
                 if (roundTrip >= 0) {
                     pingStats = pingStats.record(roundTrip)
                     output.roundTripMs = roundTrip
+                    pingAllRound?.let { round ->
+                        if (body.pingTs == round.sendTs && seat.player.id in round.expected) {
+                            round.answers[seat.player.id] = roundTrip
+                        }
+                    }
                 }
             }
             // The host never resends: an ACK only shows up in the log, where lost messages are counted.

@@ -19,6 +19,8 @@ import io.hypercode.hyperblekit.realtimeFrameFlow
 import io.hypercode.hyperblekit.protocol.seatNumber
 import io.hypercode.hyperblekit.session.HostSession
 import io.hypercode.hyperblekit.PingStats
+import io.hypercode.hyperblekit.PingAllResult
+import io.hypercode.hyperblekit.PingReply
 import io.hypercode.hyperblekit.session.RealtimeTxStats
 import io.hypercode.hyperblekit.session.TickSchedule
 import io.hypercode.hyperblekit.diagnostics.HostSpeedTest
@@ -133,6 +135,10 @@ internal class HostRuntime(
     private val _pingStats = MutableStateFlow(session.pingStats)
     val pingStats: StateFlow<PingStats> = _pingStats.asStateFlow()
 
+    /** The last on-demand ping-all ([pingAll]); null until one has run. */
+    private val _pingAll = MutableStateFlow<PingAllResult?>(null)
+    val pingAll: StateFlow<PingAllResult?> = _pingAll.asStateFlow()
+
     /** Who would take over, first to last. */
     private val _successors = MutableStateFlow(session.successorIds)
     val successors: StateFlow<List<String>> = _successors.asStateFlow()
@@ -159,6 +165,7 @@ internal class HostRuntime(
 
     private val speedTest = HostSpeedTest()
     private var speedTestJob: Job? = null
+    private var pingAllJob: Job? = null
 
     /** Chunk size per linked client, for saying why a world frame does not fit. */
     private val linkChunkLengths = HashMap<LinkId, Int>()
@@ -275,6 +282,8 @@ internal class HostRuntime(
 
     private fun halt() {
         stopSpeedTest("hosting stopped")
+        pingAllJob?.cancel()
+        pingAllJob = null
         realtimeJob?.cancel()
         realtimeJob = null
         hasStopped = true
@@ -330,6 +339,29 @@ internal class HostRuntime(
             HyperBleLog.frame(LogDirection.SENT, TestJson.LOG_TYPE, bytes.size, chunks, "to=${recipient.label}")
         }
         _testResult.value = "Test JSON: sent ${bytes.size} B to ${recipients.size} client(s)"
+    }
+
+    /**
+     * Debug: pings every joined client at once and publishes each one's round trip as it answers,
+     * finishing after [GameConstants.PING_ALL_TIMEOUT_MILLIS] (clients that stayed silent get a null
+     * time). A new call replaces one still running.
+     */
+    fun pingAll() {
+        if (hasStopped) return
+        pingAllJob?.cancel()
+        apply(session.pingAll(System.currentTimeMillis()))
+        val pending = session.clientRecipients.map { PingReply(it.label, null) }
+        if (pending.isEmpty()) {
+            _pingAll.value = PingAllResult(emptyList(), pending = false)
+            return
+        }
+        _pingAll.value = PingAllResult(pending, pending = true)
+        pingAllJob = scope.launch {
+            delay(GameConstants.PING_ALL_TIMEOUT_MILLIS)
+            val replies = session.finishPingAll()
+            _pingAll.value = PingAllResult(replies, pending = false)
+            HyperBleLog.event("ping_all: ${replies.count { it.rttMs != null }}/${replies.size} answered")
+        }
     }
 
     private fun handle(event: HostTransportEvent) {

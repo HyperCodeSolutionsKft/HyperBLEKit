@@ -43,6 +43,9 @@ internal object GameConstants {
     /** The host sends `PING` to every client this often. */
     const val PING_INTERVAL_MILLIS = 3_000L
 
+    /** How long an on-demand ping-all waits for answers before reporting who stayed silent. */
+    const val PING_ALL_TIMEOUT_MILLIS = 2_000L
+
     /** No traffic for this long means the other side is gone. */
     const val SILENCE_TIMEOUT_MILLIS = 10_000L
 

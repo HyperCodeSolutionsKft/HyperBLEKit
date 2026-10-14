@@ -28,6 +28,7 @@ public class SessionDiagnostics internal constructor(
 ) {
     internal val testResultState = MutableStateFlow<String?>(null)
     internal val testJsonReceivedState = MutableStateFlow<String?>(null)
+    internal val pingAllState = MutableStateFlow<PingAllResult?>(null)
     internal val hostSpeedTestState = MutableStateFlow<HostSpeedTestState?>(null)
     internal val clientSpeedTestState = MutableStateFlow<ClientSpeedTestState?>(null)
     internal val canRunSpeedTestState = MutableStateFlow(false)
@@ -67,6 +68,12 @@ public class SessionDiagnostics internal constructor(
     public val canRunSpeedTest: StateFlow<Boolean> = canRunSpeedTestState.asStateFlow()
 
     /**
+     * The last on-demand ping-all on this device ([pingAll]): one round trip per connected client.
+     * Null until a ping-all has run; always null while this device is a client (it is host-only).
+     */
+    public val pingAllResult: StateFlow<PingAllResult?> = pingAllState.asStateFlow()
+
+    /**
      * Sends the JSON test frame: a host sends it to every joined client, a client sends it to the
      * host. The outcome appears in [testResult] on this device, and in [testResult] and
      * [testJsonReceived] on the receiving ones. A client that has not joined yet sends nothing
@@ -75,6 +82,15 @@ public class SessionDiagnostics internal constructor(
     public fun sendTestJson() {
         val host = host()
         if (host != null) host.sendTestJson() else client()?.sendTestJson()
+    }
+
+    /**
+     * Pings every joined client at once and, after a short wait, reports each one's round trip in
+     * [pingAllResult] (a client that did not answer gets a null time). Host only: on a client it
+     * does nothing. Use it as a liveness and latency check after connecting clients.
+     */
+    public fun pingAll() {
+        host()?.pingAll()
     }
 
     /**

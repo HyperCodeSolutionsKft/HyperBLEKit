@@ -78,6 +78,7 @@ public final class GameSession: ObservableObject {
         var testJsonReceived: String?
         var hostSpeedTest: HostSpeedTestState?
         var clientSpeedTest: ClientSpeedTestState?
+        var pingAll: PingAllResult?
     }
 
     init(start: Start, config: HyperBleKitConfig, identity: LocalIdentity, log: HyperBleLog = .shared,
@@ -199,6 +200,11 @@ public final class GameSession: ObservableObject {
         case .client(let client): client.sendTestFrame()
         case nil: break
         }
+    }
+
+    func pingAll() {
+        guard case .host(let host) = role else { return }
+        host.pingAll()
     }
 
     var canRunSpeedTest: Bool {
@@ -359,6 +365,7 @@ public final class GameSession: ObservableObject {
         mirror(host.$successors, to: \.successors)
         mirror(host.$removalCountdowns, to: \.offlineSecondsLeft)
         latest.hostSpeedTest = host.speedTest
+        mirrorPingAll(host.$pingAllResult)
         latest.clientSpeedTest = nil
         mirrorDiagnostics(result: host.$testFrameText, received: host.$receivedTestFrame)
         mirrorRealtime(host.$realtimeLink)
@@ -382,6 +389,8 @@ public final class GameSession: ObservableObject {
         mirror(client.$holdsSnapshot.combineLatest(client.$takeoverRank).map(Self.migrationInfo), to: \.migrationInfo)
         mirror(client.$lastReconnectText, to: \.lastReconnect)
         latest.hostSpeedTest = nil
+        // Ping-all is host-only; a client never has a result of its own.
+        latest.pingAll = nil
         let speedTest = client.speedTest
         client.$isSpeedTestOpen
             .sink { [weak self] isOpen in
@@ -422,6 +431,17 @@ public final class GameSession: ObservableObject {
             .sink { [weak self] text in
                 MainActor.assumeIsolated {
                     self?.latest.testJsonReceived = text
+                    self?.schedulePublish()
+                }
+            }
+            .store(in: &roleSubscriptions)
+    }
+
+    private func mirrorPingAll(_ result: Published<PingAllResult?>.Publisher) {
+        result
+            .sink { [weak self] result in
+                MainActor.assumeIsolated {
+                    self?.latest.pingAll = result
                     self?.schedulePublish()
                 }
             }
@@ -469,6 +489,7 @@ public final class GameSession: ObservableObject {
             if diagnostics.clientSpeedTest !== latest.clientSpeedTest {
                 diagnostics.clientSpeedTest = latest.clientSpeedTest
             }
+            if diagnostics.pingAllResult != latest.pingAll { diagnostics.pingAllResult = latest.pingAll }
         }
     }
 
@@ -479,6 +500,7 @@ public final class GameSession: ObservableObject {
             && diagnostics.testJsonReceived == latest.testJsonReceived
             && diagnostics.hostSpeedTest === latest.hostSpeedTest
             && diagnostics.clientSpeedTest === latest.clientSpeedTest
+            && diagnostics.pingAllResult == latest.pingAll
     }
 
     private nonisolated static func connection(_ status: ClientRuntime.Status) -> ConnectionState {

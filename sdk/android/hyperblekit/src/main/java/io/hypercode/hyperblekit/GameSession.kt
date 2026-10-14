@@ -187,7 +187,7 @@ public class GameSession internal constructor(
         mirror(
             runtime.advertisingState, runtime.players, runtime.pingStats, runtime.successors,
             runtime.offlineSecondsLeft, runtime.game, runtime.gameNotice, runtime.testResult,
-            runtime.testJsonReceived, runtime.speedTestUi, runtime.realtime,
+            runtime.testJsonReceived, runtime.pingAll, runtime.speedTestUi, runtime.realtime,
         )
         // The first state of the new role is out; an app may have left in answer to it.
         if (hasLeft) return
@@ -337,6 +337,7 @@ public class GameSession internal constructor(
             _realtime.value = host.realtime.value
             diagnostics.testResultState.value = host.testResult.value
             diagnostics.testJsonReceivedState.value = host.testJsonReceived.value
+            diagnostics.pingAllState.value = host.pingAll.value
             diagnostics.hostSpeedTestState.value = speedTest
             diagnostics.clientSpeedTestState.value = null
             diagnostics.canRunSpeedTestState.value = game.phase == GamePhase.LOBBY && speedTest.linkedClients > 0
@@ -361,6 +362,7 @@ public class GameSession internal constructor(
             _realtime.value = client.realtime.value
             diagnostics.testResultState.value = client.testResult.value
             diagnostics.testJsonReceivedState.value = client.testJsonReceived.value
+            diagnostics.pingAllState.value = null
             diagnostics.hostSpeedTestState.value = null
             diagnostics.clientSpeedTestState.value = client.speedTestUi.value
             diagnostics.canRunSpeedTestState.value = false

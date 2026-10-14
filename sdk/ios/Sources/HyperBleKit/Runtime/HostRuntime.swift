@@ -35,6 +35,8 @@ final class HostRuntime: ObservableObject {
     @Published private(set) var testFrameText: String?
     /// The last received debug test frame, pretty-printed. Sent frames are not shown.
     @Published private(set) var receivedTestFrame: String?
+    /// The last on-demand ping-all (`pingAll()`); nil until one has run.
+    @Published private(set) var pingAllResult: PingAllResult?
     /// Called when another device hosts this game with a better claim: this device has stopped
     /// hosting and should continue as a client.
     var onStepDown: ((StepDown) -> Void)?
@@ -64,6 +66,8 @@ final class HostRuntime: ObservableObject {
     private var speedTestTimer: Timer?
     /// Runs the real-time game's due ticks, twice a tick, while one is being played.
     private var realtimeTimer: Timer?
+    /// Collects the answers of a ping-all and reports them when it fires, nil when none runs.
+    private var pingAllTimer: Timer?
     /// The counters while the world runs; nil while it is paused.
     private var realtimeStats: RealtimeTxStats?
     /// Whether a real-time game was being played at the last update: a new game gets a new link.
@@ -194,6 +198,30 @@ final class HostRuntime: ObservableObject {
             ? "Test JSON: no joined client to send to"
             : "Test JSON: sent \(TestFrame.data.count) B to \(recipients.map(\.label).joined(separator: ", "))"
         if recipients.isEmpty { log.event("test JSON not sent: no joined client") }
+    }
+
+    /// Debug: pings every joined client at once and publishes each one's round trip as it
+    /// answers, finishing after `ProtocolConstants.pingAllTimeout` (clients that stayed silent
+    /// get a nil time). A new call replaces one still running.
+    func pingAll() {
+        guard !isStopped else { return }
+        pingAllTimer?.invalidate()
+        pingAllTimer = nil
+        apply(session.pingAll(at: Date()))
+        let pending = session.linkedClients.map { PingReply(playerId: $0.label, rttMs: nil) }
+        guard !pending.isEmpty else {
+            pingAllResult = PingAllResult(replies: [], pending: false)
+            return
+        }
+        pingAllResult = PingAllResult(replies: pending, pending: true)
+        pingAllTimer = Timer.scheduledInCommonModes(withTimeInterval: ProtocolConstants.pingAllTimeout,
+                                                    repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.pingAllTimer = nil
+            let replies = self.session.finishPingAll()
+            self.pingAllResult = PingAllResult(replies: replies, pending: false)
+            self.log.event("ping_all: \(replies.filter { $0.rttMs != nil }.count)/\(replies.count) answered")
+        }
     }
 
     // MARK: - Speed test
@@ -394,6 +422,8 @@ final class HostRuntime: ObservableObject {
         isStopped = true
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
+        pingAllTimer?.invalidate()
+        pingAllTimer = nil
         endProbe()
     }
 

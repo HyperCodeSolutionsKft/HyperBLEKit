@@ -20,6 +20,10 @@ public final class SessionDiagnostics: ObservableObject {
     /// What a client's speed-test view shows. Set while the host's speed-test frames arrive,
     /// and nil again 2 seconds after the last one; nil on a host.
     @Published public internal(set) var clientSpeedTest: ClientSpeedTestState?
+    /// The last on-demand ping-all on this device (`pingAll()`): one round trip per connected
+    /// client. nil until a ping-all has run; always nil while this device is a client (it is
+    /// host-only).
+    @Published public internal(set) var pingAllResult: PingAllResult?
 
     weak var session: GameSession?
 
@@ -58,5 +62,12 @@ public final class SessionDiagnostics: ObservableObject {
     /// Does nothing while `clientSpeedTest` is nil.
     public func tapSpeedTest() {
         session?.tapSpeedTest()
+    }
+
+    /// Host only: pings every joined client at once and, after a short wait, reports each one's
+    /// round trip in `pingAllResult` (a client that did not answer gets a nil time). On a client
+    /// it does nothing. Use it as a liveness and latency check after connecting clients.
+    public func pingAll() {
+        session?.pingAll()
     }
 }

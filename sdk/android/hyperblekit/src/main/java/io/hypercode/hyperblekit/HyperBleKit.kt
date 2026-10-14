@@ -84,6 +84,8 @@ public class HyperBleKit private constructor(
         val publishDispatcher: CoroutineDispatcher,
         /** The monotonic clock every duration is measured with, in ms. */
         val elapsedMillis: () -> Long,
+        /** Shared with the client transports so the connection priority can be changed at runtime. */
+        val connectionPriority: ConnectionPriorityHolder = ConnectionPriorityHolder(),
     )
 
     private val hostTransport = wiring.hostTransport
@@ -92,7 +94,21 @@ public class HyperBleKit private constructor(
     private val scope = wiring.scope
     private val publishDispatcher = wiring.publishDispatcher
     private val elapsedMillis = wiring.elapsedMillis
+    private val connectionPriorityHolder = wiring.connectionPriority
     private var isClosed = false
+
+    /**
+     * The connection priority a client requests right after connecting (Android
+     * `BluetoothGatt.requestConnectionPriority`). Set it before [join]; it takes effect on the next
+     * connection and every reconnect after that. The host does not use it. Default
+     * [ConnectionPriority.HIGH]. See [ConnectionPriority].
+     */
+    public var connectionPriority: ConnectionPriority
+        get() = connectionPriorityHolder.value
+        set(value) {
+            connectionPriorityHolder.value = value
+            HyperBleLog.event("connection priority set to $value (takes effect on the next connection)")
+        }
 
     /**
      * Who this device is in a game: its permanent device ID and the player's name. Set
@@ -303,15 +319,19 @@ public class HyperBleKit private constructor(
 
         private fun bleWiring(appContext: Context, config: HyperBleKitConfig): Wiring {
             val uuids = BleUuids(config)
+            val connectionPriority = ConnectionPriorityHolder()
             return Wiring(
                 identity = LocalIdentity(appContext),
                 hostTransport = BleHostTransport(appContext, uuids),
                 scanner = BleGameScanner(appContext, uuids, config.localNamePrefix),
-                clientTransportFactory = { BleClientTransport(appContext, uuids, config.localNamePrefix) },
+                clientTransportFactory = {
+                    BleClientTransport(appContext, uuids, config.localNamePrefix) { connectionPriority.value }
+                },
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
                 // Not `.immediate`: this one posts to the main thread's queue even from the main thread.
                 publishDispatcher = Dispatchers.Main,
                 elapsedMillis = SystemClock::elapsedRealtime,
+                connectionPriority = connectionPriority,
             )
         }
     }
