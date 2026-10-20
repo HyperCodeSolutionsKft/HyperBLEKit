@@ -124,8 +124,9 @@ public class GameSession internal constructor(
 
     /**
      * Why [startGame] would be refused right now, as a short English sentence for the screen, or
-     * null if the game can be started. For example "Chess needs 2 connected players" while too
-     * few or too many players are connected. Use it to disable a start button and to say why.
+     * null if the game can be started. For example "Chess needs 2 connected players, 1 connected
+     * now" while too few or too many players are connected. Use it to disable a start button and
+     * to say why.
      *
      * It reads the current [state], so ask again when [state] changes. On a client the answer is
      * always a problem: only the host starts games.
@@ -137,7 +138,9 @@ public class GameSession internal constructor(
         val module = config.findGame(gameId) ?: return "This app has no game \"$gameId\""
         if (host.game.value.phase == GamePhase.PLAYING) return "a game is already running"
         val connected = host.players.value.count { it.connected }
-        if (!module.supports(connected)) return "${module.title} needs ${module.playerCountLabel} connected players"
+        if (!module.supports(connected)) {
+            return "${module.title} needs ${module.playerCountLabel} connected players, $connected connected now"
+        }
         return null
     }
 
@@ -187,7 +190,8 @@ public class GameSession internal constructor(
         mirror(
             runtime.advertisingState, runtime.players, runtime.pingStats, runtime.successors,
             runtime.offlineSecondsLeft, runtime.game, runtime.gameNotice, runtime.testResult,
-            runtime.testJsonReceived, runtime.pingAll, runtime.speedTestUi, runtime.realtime,
+            runtime.testJsonReceived, runtime.pingAll, runtime.clientLogs, runtime.speedTestUi,
+            runtime.realtime,
         )
         // The first state of the new role is out; an app may have left in answer to it.
         if (hasLeft) return
@@ -338,6 +342,7 @@ public class GameSession internal constructor(
             diagnostics.testResultState.value = host.testResult.value
             diagnostics.testJsonReceivedState.value = host.testJsonReceived.value
             diagnostics.pingAllState.value = host.pingAll.value
+            diagnostics.clientLogsState.value = host.clientLogs.value
             diagnostics.hostSpeedTestState.value = speedTest
             diagnostics.clientSpeedTestState.value = null
             diagnostics.canRunSpeedTestState.value = game.phase == GamePhase.LOBBY && speedTest.linkedClients > 0
@@ -363,6 +368,7 @@ public class GameSession internal constructor(
             diagnostics.testResultState.value = client.testResult.value
             diagnostics.testJsonReceivedState.value = client.testJsonReceived.value
             diagnostics.pingAllState.value = null
+            diagnostics.clientLogsState.value = null
             diagnostics.hostSpeedTestState.value = null
             diagnostics.clientSpeedTestState.value = client.speedTestUi.value
             diagnostics.canRunSpeedTestState.value = false

@@ -74,6 +74,19 @@ internal data class Message(
         /** Client → host: a `stateVersion` gap was detected; answered with `STATE_SYNC`. */
         data class SyncRequest(val haveVersion: Int) : Body
 
+        /**
+         * Host → all joined clients: asks each to upload its debug log for end-of-run collection
+         * (`SessionDiagnostics.requestClientLogs`). A diagnostic message; it changes no game state.
+         */
+        data object LogRequest : Body
+
+        /**
+         * Client → host: one batch of this device's debug-log lines, [part] of [parts] (both
+         * 0-based count / total), in the order the lines appear on screen. The log can be larger
+         * than one message, so it is sent in batches; the host reassembles them per player.
+         */
+        data class LogUpload(val part: Int, val parts: Int, val lines: List<String>) : Body
+
         /** A type this build doesn't know. Logged and ignored. */
         data class Unknown(val type: String) : Body
     }
@@ -96,6 +109,8 @@ internal data class Message(
             is Body.GameAction -> MessageType.GAME_ACTION
             is Body.Error -> MessageType.ERROR
             is Body.SyncRequest -> MessageType.SYNC_REQUEST
+            Body.LogRequest -> MessageType.LOG_REQUEST
+            is Body.LogUpload -> MessageType.LOG_UPLOAD
             is Body.Unknown -> body.type
         }
 
@@ -131,6 +146,7 @@ internal data class Message(
             is Body.GameAction -> "game=${body.game} ${actionSummary(body.action)}"
             is Body.Error -> "code=${body.code} refSeq=${body.refSeq}"
             is Body.SyncRequest -> "have=${body.haveVersion}"
+            is Body.LogUpload -> "part=${body.part + 1}/${body.parts} lines=${body.lines.size}"
             else -> null
         }
 
@@ -174,4 +190,6 @@ internal object MessageType {
     const val GAME_ACTION = "GAME_ACTION"
     const val ERROR = "ERROR"
     const val SYNC_REQUEST = "SYNC_REQUEST"
+    const val LOG_REQUEST = "LOG_REQUEST"
+    const val LOG_UPLOAD = "LOG_UPLOAD"
 }

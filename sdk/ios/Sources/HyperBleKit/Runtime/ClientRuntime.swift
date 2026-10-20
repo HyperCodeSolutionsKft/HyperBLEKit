@@ -189,6 +189,26 @@ final class ClientRuntime: ObservableObject {
         sendSpeedTestInput(tapped: true)
     }
 
+    /// The host asked for this device's log (`LOG_REQUEST`): sends the current debug-log buffer to
+    /// the host as `LOG_UPLOAD` batches. The lines are snapshotted first, so the upload's own log
+    /// lines are not part of what is sent. An empty log still sends one empty batch, so the host
+    /// sees that this client answered.
+    private func uploadLogs(at now: Date) {
+        guard isLinkReady, status == .joined else {
+            log.event("log not uploaded: not connected to the host", at: now)
+            return
+        }
+        let lines = log.entries.map(\.text)
+        let size = ProtocolConstants.logUploadBatchLines
+        let batches: [[String]] = lines.isEmpty
+            ? [[]]
+            : stride(from: 0, to: lines.count, by: size).map { Array(lines[$0..<min($0 + size, lines.count)]) }
+        log.event("uploading \(lines.count) log line(s) to the host in \(batches.count) batch(es)", at: now)
+        for (index, batch) in batches.enumerated() {
+            send(session.logUpload(part: index, parts: batches.count, lines: batch, at: now))
+        }
+    }
+
     private func handle(_ event: ClientTransportEvent) {
         // Left, or now the host: whatever the old link still reports no longer matters.
         guard !hasLeft else { return }
@@ -229,6 +249,7 @@ final class ClientRuntime: ObservableObject {
             if let rejection = output.rejection { gameNotice = rejection.text }
             sessionChanged()
             if let event = output.event { hostAnnounced(event, at: now) }
+            if output.logRequested { uploadLogs(at: now) }
         case .frame(let data):
             // No log line per frame; the speed test and the real-time game log counters once a second.
             guard isLinkReady else { return }

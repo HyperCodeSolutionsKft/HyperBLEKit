@@ -50,6 +50,14 @@ struct HostSession {
         let recipients: [Recipient]
     }
 
+    /// One `LOG_UPLOAD` batch from a client, for the runtime to reassemble.
+    struct LogUploadReceived: Equatable {
+        let playerId: String
+        let part: Int
+        let parts: Int
+        let lines: [String]
+    }
+
     struct Output: Equatable {
         var outgoing: [Outgoing] = []
         var notes: [String] = []
@@ -58,6 +66,8 @@ struct HostSession {
         /// Set when the host's own request was refused: a move the game rejected, or a game
         /// that could not be started. Nothing was sent.
         var rejection: GameRejection?
+        /// Set when the handled message was a `LOG_UPLOAD`: one batch of a client's debug log.
+        var logUpload: LogUploadReceived?
     }
 
     /// What one call of `advanceRealtime` did.
@@ -414,6 +424,22 @@ struct HostSession {
         return output
     }
 
+    /// Asks every linked client to upload its debug log (`SessionDiagnostics.requestClientLogs()`):
+    /// a `LOG_REQUEST` to each. The batches come back as `LOG_UPLOAD` messages (`Output.logUpload`).
+    /// Returns the player IDs that were asked, in seat order, so the runtime knows who to expect.
+    mutating func requestClientLogs(at now: Date) -> (output: Output, asked: [String]) {
+        var output = Output()
+        let everyone = linkedClients
+        guard !everyone.isEmpty else {
+            output.notes.append("collect logs: no linked client to ask")
+            return (output, [])
+        }
+        output.outgoing.append(Outgoing(message: makeMessage(.logRequest, now: now), recipients: everyone))
+        let asked = everyone.map(\.label).sorted { Player.seatNumber(of: $0) < Player.seatNumber(of: $1) }
+        output.notes.append("collect logs: asked \(asked.count) client(s) to upload their log")
+        return (output, asked)
+    }
+
     /// Ends the ping-all started by `pingAll(at:)` and returns one reply per pinged client, in
     /// seat order; a client that did not answer has a nil time. Empty when no round was open.
     mutating func finishPingAll() -> [PingReply] {
@@ -579,10 +605,15 @@ struct HostSession {
             gameAction(data, refSeq: message.seq, at: index, now: now, using: &random, output: &output)
         case .syncRequest:
             output.outgoing.append(stateSync(to: seats[index], now: now))
+        case .logUpload(let data):
+            output.logUpload = LogUploadReceived(playerId: seats[index].player.id, part: data.part,
+                                                 parts: data.parts, lines: data.lines)
+            output.notes.append("log from \(seats[index].player.id): batch \(data.part + 1)/\(data.parts), "
+                                + "\(data.lines.count) line(s)")
         case .unknown(let type):
             output.notes.append("ignored unknown message type \(type)")
         case .joinRequest, .joinAccept, .joinReject, .stateSync, .playerList, .gameState, .error,
-             .hostSnapshot, .hostLeaving, .gameOver:
+             .hostSnapshot, .hostLeaving, .gameOver, .logRequest:
             output.notes.append("ignored \(message.type): not a client message")
         }
     }

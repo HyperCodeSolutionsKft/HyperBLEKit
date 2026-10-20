@@ -17,6 +17,8 @@ struct ClientSession {
         var event: Event?
         /// Set when the host rejected our game action with `ERROR`.
         var rejection: GameRejection?
+        /// Set when the host asked this device to upload its log (`LOG_REQUEST`).
+        var logRequested = false
     }
 
     let deviceId: String
@@ -83,6 +85,12 @@ struct ClientSession {
 
     mutating func leave(at now: Date) -> Message {
         makeMessage(.leave, now: now)
+    }
+
+    /// One batch of this device's debug log for the host (answering a `LOG_REQUEST`): `part` of
+    /// `parts`, carrying `lines`. A diagnostic message; it carries no state and expects no answer.
+    mutating func logUpload(part: Int, parts: Int, lines: [String], at now: Date) -> Message {
+        makeMessage(.logUpload(LogUpload(part: part, parts: parts, lines: lines)), now: now)
     }
 
     func isHostSilent(at now: Date) -> Bool {
@@ -176,9 +184,12 @@ struct ClientSession {
             }
         case .pong:
             break
+        case .logRequest:
+            output.logRequested = true
+            output.notes.append("host asked for this device's log")
         case .unknown(let type):
             output.notes.append("ignored unknown message type \(type)")
-        case .joinRequest, .joinReject, .leave, .ack, .gameAction, .syncRequest:
+        case .joinRequest, .joinReject, .leave, .ack, .gameAction, .syncRequest, .logUpload:
             output.notes.append("ignored \(message.type): not a host message")
         }
         if message.needsAck {

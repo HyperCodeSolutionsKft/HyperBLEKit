@@ -37,6 +37,8 @@ final class HostRuntime: ObservableObject {
     @Published private(set) var receivedTestFrame: String?
     /// The last on-demand ping-all (`pingAll()`); nil until one has run.
     @Published private(set) var pingAllResult: PingAllResult?
+    /// The logs collected from clients (`requestClientLogs()`); nil until a collection is requested.
+    @Published private(set) var clientLogs: ClientLogCollection?
     /// Called when another device hosts this game with a better claim: this device has stopped
     /// hosting and should continue as a client.
     var onStepDown: ((StepDown) -> Void)?
@@ -68,6 +70,10 @@ final class HostRuntime: ObservableObject {
     private var realtimeTimer: Timer?
     /// Collects the answers of a ping-all and reports them when it fires, nil when none runs.
     private var pingAllTimer: Timer?
+    /// One client's log being reassembled from its `LOG_UPLOAD` batches, keyed by player ID.
+    private var collectedLogs: [String: LogBatches] = [:]
+    /// How many clients the current collection asked, to know when it is done.
+    private var expectedLogClients = 0
     /// The counters while the world runs; nil while it is paused.
     private var realtimeStats: RealtimeTxStats?
     /// Whether a real-time game was being played at the last update: a new game gets a new link.
@@ -146,13 +152,14 @@ final class HostRuntime: ObservableObject {
 
     /// Why this game cannot be started right now, nil when it can.
     func startGameProblem(for module: GameModule) -> String? {
-        guard !module.supports(playerCount: players.filter(\.connected).count) else {
+        let connected = players.filter(\.connected).count
+        guard !module.supports(playerCount: connected) else {
             return session.linkProblem(for: module)
         }
         let counts = (1...session.maxPlayers).filter { module.supports(playerCount: $0) }
         guard let least = counts.first, let most = counts.last else { return "\(module.title) cannot be played here" }
         let range = least == most ? "\(least)" : "\(least)–\(most)"
-        return "\(module.title) needs \(range) connected players"
+        return "\(module.title) needs \(range) connected players, \(connected) connected now"
     }
 
     /// Starts this game for everyone who is connected.
@@ -222,6 +229,53 @@ final class HostRuntime: ObservableObject {
             self.pingAllResult = PingAllResult(replies: replies, pending: false)
             self.log.event("ping_all: \(replies.filter { $0.rttMs != nil }.count)/\(replies.count) answered")
         }
+    }
+
+    /// Debug: asks every joined client to upload its debug log and publishes the logs in
+    /// `clientLogs` as the batches arrive. A new call starts a fresh collection, so a client that
+    /// is asked again re-sends its whole log. With no joined client it publishes an empty one.
+    func requestClientLogs() {
+        guard !isStopped else { return }
+        let (output, asked) = session.requestClientLogs(at: Date())
+        collectedLogs = [:]
+        expectedLogClients = asked.count
+        publishClientLogs()
+        apply(output)
+    }
+
+    /// One `LOG_UPLOAD` batch from a client: reassembled per player.
+    private struct LogBatches {
+        let name: String
+        let platform: String
+        var expected = 0
+        var parts: [Int: [String]] = [:]
+        var lines: [String] { parts.sorted { $0.key < $1.key }.flatMap(\.value) }
+        var isComplete: Bool { expected > 0 && parts.count >= expected }
+    }
+
+    private func recordClientLog(_ upload: HostSession.LogUploadReceived) {
+        let player = session.players.first { $0.id == upload.playerId }
+        var batches = collectedLogs[upload.playerId]
+            ?? LogBatches(name: player?.name ?? upload.playerId, platform: player?.platform ?? "?")
+        batches.expected = upload.parts
+        batches.parts[upload.part] = upload.lines
+        collectedLogs[upload.playerId] = batches
+        if collectedLogs.count >= expectedLogClients, collectedLogs.values.allSatisfy(\.isComplete) {
+            log.event("collect logs: \(collectedLogs.count)/\(expectedLogClients) client log(s) complete")
+        }
+        publishClientLogs()
+    }
+
+    private func publishClientLogs() {
+        let logs = collectedLogs
+            .sorted { Player.seatNumber(of: $0.key) < Player.seatNumber(of: $1.key) }
+            .map { playerId, batches in
+                CollectedClientLog(playerId: playerId, name: batches.name, platform: batches.platform,
+                                   lines: batches.lines, batchesReceived: batches.parts.count,
+                                   batchesExpected: batches.expected)
+            }
+        let pending = logs.count < expectedLogClients || logs.contains { !$0.complete }
+        clientLogs = ClientLogCollection(logs: logs, expectedClients: expectedLogClients, pending: pending)
     }
 
     // MARK: - Speed test
@@ -347,6 +401,7 @@ final class HostRuntime: ObservableObject {
     /// Sends what the session decided, one log line per recipient.
     private func apply(_ output: HostSession.Output) {
         output.notes.forEach { log.event($0) }
+        if let upload = output.logUpload { recordClientLog(upload) }
         for outgoing in output.outgoing {
             guard let data = try? outgoing.message.encoded() else {
                 log.event("could not encode \(outgoing.message.type)")

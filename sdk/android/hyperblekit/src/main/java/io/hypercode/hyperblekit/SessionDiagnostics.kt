@@ -29,6 +29,7 @@ public class SessionDiagnostics internal constructor(
     internal val testResultState = MutableStateFlow<String?>(null)
     internal val testJsonReceivedState = MutableStateFlow<String?>(null)
     internal val pingAllState = MutableStateFlow<PingAllResult?>(null)
+    internal val clientLogsState = MutableStateFlow<ClientLogCollection?>(null)
     internal val hostSpeedTestState = MutableStateFlow<HostSpeedTestState?>(null)
     internal val clientSpeedTestState = MutableStateFlow<ClientSpeedTestState?>(null)
     internal val canRunSpeedTestState = MutableStateFlow(false)
@@ -74,6 +75,13 @@ public class SessionDiagnostics internal constructor(
     public val pingAllResult: StateFlow<PingAllResult?> = pingAllState.asStateFlow()
 
     /**
+     * The debug logs collected from the clients ([requestClientLogs]): one entry per client that
+     * uploaded anything, filling live as batches arrive. Null until a collection is requested, and
+     * always null while this device is a client (collection is host-only).
+     */
+    public val clientLogs: StateFlow<ClientLogCollection?> = clientLogsState.asStateFlow()
+
+    /**
      * Sends the JSON test frame: a host sends it to every joined client, a client sends it to the
      * host. The outcome appears in [testResult] on this device, and in [testResult] and
      * [testJsonReceived] on the receiving ones. A client that has not joined yet sends nothing
@@ -91,6 +99,16 @@ public class SessionDiagnostics internal constructor(
      */
     public fun pingAll() {
         host()?.pingAll()
+    }
+
+    /**
+     * Asks every joined client to upload its debug log to the host for end-of-run collection, and
+     * publishes the logs in [clientLogs] as they arrive. Host only: on a client it does nothing.
+     * A new call starts a fresh collection. Each client answers automatically — the operator only
+     * taps this once on the host — so the whole run's logs can be exported from one device.
+     */
+    public fun requestClientLogs() {
+        host()?.requestClientLogs()
     }
 
     /**

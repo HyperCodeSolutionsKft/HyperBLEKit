@@ -129,7 +129,11 @@ internal object WireJson {
             .put("code", body.code)
             .putOptional("reason", body.reason)
         is Message.Body.SyncRequest -> JSONObject().put("haveVersion", body.haveVersion)
-        Message.Body.Leave, is Message.Body.Unknown -> JSONObject()
+        is Message.Body.LogUpload -> JSONObject()
+            .put("part", body.part)
+            .put("parts", body.parts)
+            .put("lines", JSONArray(body.lines))
+        Message.Body.Leave, Message.Body.LogRequest, is Message.Body.Unknown -> JSONObject()
     }
 
     private fun body(type: String, data: JSONObject): Message.Body = when (type) {
@@ -189,6 +193,12 @@ internal object WireJson {
             reason = data.optionalString("reason"),
         )
         MessageType.SYNC_REQUEST -> Message.Body.SyncRequest(data.getInt("haveVersion"))
+        MessageType.LOG_REQUEST -> Message.Body.LogRequest
+        MessageType.LOG_UPLOAD -> Message.Body.LogUpload(
+            part = data.getInt("part"),
+            parts = data.getInt("parts"),
+            lines = strings(data.optJSONArray("lines")),
+        )
         else -> Message.Body.Unknown(type)
     }
 

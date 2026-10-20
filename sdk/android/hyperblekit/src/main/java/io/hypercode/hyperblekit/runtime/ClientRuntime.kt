@@ -282,6 +282,25 @@ internal class ClientRuntime(
         _testResult.value = "Test JSON: sent ${bytes.size} B in $chunks chunks"
     }
 
+    /**
+     * The host asked for this device's log (`LOG_REQUEST`): sends the current debug-log buffer to
+     * the host as `LOG_UPLOAD` batches. The lines are snapshotted first, so the upload's own log
+     * lines are not part of what is sent. An empty log still sends one (empty) batch, so the host
+     * sees that this client answered.
+     */
+    private fun uploadLogs(nowMillis: Long) {
+        if (!linkReady || _status.value != ClientStatus.Joined) {
+            HyperBleLog.event("log not uploaded: not connected to the host", LogLevel.WARN)
+            return
+        }
+        val lines = HyperBleLog.entries.value.map { it.line }
+        val batches = lines.chunked(GameConstants.LOG_UPLOAD_BATCH_LINES).ifEmpty { listOf(emptyList()) }
+        HyperBleLog.event("uploading ${lines.size} log line(s) to the host in ${batches.size} batch(es)")
+        batches.forEachIndexed { index, batch ->
+            send(session.logUpload(index, batches.size, batch, nowMillis))
+        }
+    }
+
     /** A debug test frame: compared and logged, never applied to the session. */
     private fun testJsonReceived(event: ClientTransportEvent.MessageReceived) {
         val matches = TestJson.matches(event.bytes)
@@ -331,6 +350,7 @@ internal class ClientRuntime(
                 output.notes.forEach { HyperBleLog.event(it) }
                 output.outgoing.forEach(::send)
                 sessionChanged(output)
+                if (output.logRequested) uploadLogs(now)
             }
             is ClientTransportEvent.FrameReceived ->
                 if (event.payload.isNotEmpty() && (event.payload[0].toInt() and BYTE_MASK) == SpeedTestPayloads.KIND_WORLD) {

@@ -49,6 +49,9 @@ internal class ClientSession(
 
         /** The handled message was `ERROR`: the host rejected one of this client's actions. */
         var error: Message.Body.Error? = null
+
+        /** The handled message was `LOG_REQUEST`: the host asked this device to upload its log. */
+        var logRequested = false
     }
 
     val name: String = name.truncatedPlayerName()
@@ -137,6 +140,13 @@ internal class ClientSession(
     }
 
     fun leave(nowMillis: Long): Message = makeMessage(Message.Body.Leave, nowMillis)
+
+    /**
+     * One batch of this device's debug log for the host (answering a `LOG_REQUEST`): [part] of
+     * [parts], carrying [lines]. A diagnostic message; it carries no state and expects no answer.
+     */
+    fun logUpload(part: Int, parts: Int, lines: List<String>, nowMillis: Long): Message =
+        makeMessage(Message.Body.LogUpload(part, parts, lines), nowMillis)
 
     /**
      * This player's move as a `GAME_ACTION` for the running game. The state only changes when the
@@ -237,9 +247,13 @@ internal class ClientSession(
                 }
             is Message.Body.HostLeaving -> output.nextHostId = body.nextHostId
             is Message.Body.GameOver -> output.gameOverReason = body.reason
+            Message.Body.LogRequest -> {
+                output.logRequested = true
+                output.notes += "host asked for this device's log"
+            }
             is Message.Body.Unknown -> output.notes += "ignored unknown message type ${body.type}"
             is Message.Body.JoinRequest, is Message.Body.JoinReject, Message.Body.Leave, is Message.Body.Ack,
-            is Message.Body.GameAction, is Message.Body.SyncRequest ->
+            is Message.Body.GameAction, is Message.Body.SyncRequest, is Message.Body.LogUpload ->
                 output.notes += "ignored ${message.type}: not a host message"
         }
         if (message.needsAck) {

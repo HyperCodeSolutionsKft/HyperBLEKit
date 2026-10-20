@@ -225,7 +225,7 @@ final class RuntimeEndToEndTests: XCTestCase {
     func testOnePlayerCannotStartTheGame() {
         let a = phone("Anna")
         let session = a.kit.host()
-        XCTAssertEqual(session.startGameProblem(CounterModule.moduleId), "Counter needs 2–4 connected players")
+        XCTAssertEqual(session.startGameProblem(CounterModule.moduleId), "Counter needs 2–4 connected players, 1 connected now")
         a.kit.leave()
     }
 
@@ -494,6 +494,41 @@ final class RuntimeEndToEndTests: XCTestCase {
         a.kit.leave()
         b.kit.leave()
         c.kit.leave()
+    }
+
+    func testHostCollectsEveryClientLogInOneRequest() {
+        let (a, b, c, sessionA, sessionB, sessionC) = threePhonesInTheLobby()
+        XCTAssertNil(sessionA.diagnostics.clientLogs, "nothing is collected until it is asked for")
+
+        sessionA.diagnostics.requestClientLogs()
+        waitUntil("the host has collected both client logs") {
+            sessionA.diagnostics.clientLogs?.pending == false
+        }
+        let collection = sessionA.diagnostics.clientLogs!
+        XCTAssertEqual(collection.expectedClients, 2)
+        XCTAssertEqual(collection.logs.map(\.playerId), ["p2", "p3"])
+        XCTAssertEqual(collection.logs.map(\.name), ["Bence", "Csilla"])
+        XCTAssertTrue(collection.logs.allSatisfy(\.complete), "every announced batch arrived")
+        XCTAssertTrue(collection.logs.allSatisfy { !$0.lines.isEmpty }, "a client uploads its own log lines")
+        // Collection is host-only: a client never gathers logs itself.
+        XCTAssertNil(sessionB.diagnostics.clientLogs)
+        XCTAssertNil(sessionC.diagnostics.clientLogs)
+        a.kit.leave()
+        b.kit.leave()
+        c.kit.leave()
+    }
+
+    func testCollectingLogsWithNoClientGivesAnEmptyCollection() {
+        let a = phone("Anna")
+        let sessionA = a.kit.host()
+        settle()
+        sessionA.diagnostics.requestClientLogs()
+        waitUntil("the empty collection is published") { sessionA.diagnostics.clientLogs != nil }
+        let collection = sessionA.diagnostics.clientLogs!
+        XCTAssertEqual(collection.expectedClients, 0)
+        XCTAssertFalse(collection.pending)
+        XCTAssertTrue(collection.logs.isEmpty)
+        a.kit.leave()
     }
 
     func testClosingTheKitLeavesAndStopsDiscovery() {

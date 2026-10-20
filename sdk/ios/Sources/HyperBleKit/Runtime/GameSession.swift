@@ -79,6 +79,7 @@ public final class GameSession: ObservableObject {
         var hostSpeedTest: HostSpeedTestState?
         var clientSpeedTest: ClientSpeedTestState?
         var pingAll: PingAllResult?
+        var clientLogs: ClientLogCollection?
     }
 
     init(start: Start, config: HyperBleKitConfig, identity: LocalIdentity, log: HyperBleLog = .shared,
@@ -205,6 +206,11 @@ public final class GameSession: ObservableObject {
     func pingAll() {
         guard case .host(let host) = role else { return }
         host.pingAll()
+    }
+
+    func requestClientLogs() {
+        guard case .host(let host) = role else { return }
+        host.requestClientLogs()
     }
 
     var canRunSpeedTest: Bool {
@@ -366,6 +372,7 @@ public final class GameSession: ObservableObject {
         mirror(host.$removalCountdowns, to: \.offlineSecondsLeft)
         latest.hostSpeedTest = host.speedTest
         mirrorPingAll(host.$pingAllResult)
+        mirrorClientLogs(host.$clientLogs)
         latest.clientSpeedTest = nil
         mirrorDiagnostics(result: host.$testFrameText, received: host.$receivedTestFrame)
         mirrorRealtime(host.$realtimeLink)
@@ -389,8 +396,9 @@ public final class GameSession: ObservableObject {
         mirror(client.$holdsSnapshot.combineLatest(client.$takeoverRank).map(Self.migrationInfo), to: \.migrationInfo)
         mirror(client.$lastReconnectText, to: \.lastReconnect)
         latest.hostSpeedTest = nil
-        // Ping-all is host-only; a client never has a result of its own.
+        // Ping-all and log collection are host-only; a client never has a result of its own.
         latest.pingAll = nil
+        latest.clientLogs = nil
         let speedTest = client.speedTest
         client.$isSpeedTestOpen
             .sink { [weak self] isOpen in
@@ -448,6 +456,17 @@ public final class GameSession: ObservableObject {
             .store(in: &roleSubscriptions)
     }
 
+    private func mirrorClientLogs(_ logs: Published<ClientLogCollection?>.Publisher) {
+        logs
+            .sink { [weak self] logs in
+                MainActor.assumeIsolated {
+                    self?.latest.clientLogs = logs
+                    self?.schedulePublish()
+                }
+            }
+            .store(in: &roleSubscriptions)
+    }
+
     private func mirrorRealtime(_ link: Published<RealtimeFeed?>.Publisher) {
         link
             .sink { [weak self] link in
@@ -490,6 +509,7 @@ public final class GameSession: ObservableObject {
                 diagnostics.clientSpeedTest = latest.clientSpeedTest
             }
             if diagnostics.pingAllResult != latest.pingAll { diagnostics.pingAllResult = latest.pingAll }
+            if diagnostics.clientLogs != latest.clientLogs { diagnostics.clientLogs = latest.clientLogs }
         }
     }
 
@@ -501,6 +521,7 @@ public final class GameSession: ObservableObject {
             && diagnostics.hostSpeedTest === latest.hostSpeedTest
             && diagnostics.clientSpeedTest === latest.clientSpeedTest
             && diagnostics.pingAllResult == latest.pingAll
+            && diagnostics.clientLogs == latest.clientLogs
     }
 
     private nonisolated static func connection(_ status: ClientRuntime.Status) -> ConnectionState {

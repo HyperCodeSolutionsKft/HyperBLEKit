@@ -210,6 +210,24 @@ struct SyncRequest: Codable, Equatable {
     let haveVersion: Int
 }
 
+/// Payload of `LOG_UPLOAD`: one batch of a client's debug log, `part` of `parts` (0-based count /
+/// total), with `lines` in screen order. A diagnostic message; it carries no state.
+struct LogUpload: Codable, Equatable {
+    let part: Int
+    let parts: Int
+    let lines: [String]
+}
+
+extension LogUpload {
+    /// A missing `lines` is read as an empty batch, the same as on Android.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        part = try container.decode(Int.self, forKey: .part)
+        parts = try container.decode(Int.self, forKey: .parts)
+        lines = try container.decodeIfPresent([String].self, forKey: .lines) ?? []
+    }
+}
+
 struct PlayerList: Codable, Equatable {
     static let joined = "joined"
     static let left = "left"

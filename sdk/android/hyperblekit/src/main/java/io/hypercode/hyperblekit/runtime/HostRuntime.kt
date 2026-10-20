@@ -21,6 +21,8 @@ import io.hypercode.hyperblekit.session.HostSession
 import io.hypercode.hyperblekit.PingStats
 import io.hypercode.hyperblekit.PingAllResult
 import io.hypercode.hyperblekit.PingReply
+import io.hypercode.hyperblekit.ClientLogCollection
+import io.hypercode.hyperblekit.CollectedClientLog
 import io.hypercode.hyperblekit.session.RealtimeTxStats
 import io.hypercode.hyperblekit.session.TickSchedule
 import io.hypercode.hyperblekit.diagnostics.HostSpeedTest
@@ -138,6 +140,21 @@ internal class HostRuntime(
     /** The last on-demand ping-all ([pingAll]); null until one has run. */
     private val _pingAll = MutableStateFlow<PingAllResult?>(null)
     val pingAll: StateFlow<PingAllResult?> = _pingAll.asStateFlow()
+
+    /** The logs collected from clients ([requestClientLogs]); null until a collection is requested. */
+    private val _clientLogs = MutableStateFlow<ClientLogCollection?>(null)
+    val clientLogs: StateFlow<ClientLogCollection?> = _clientLogs.asStateFlow()
+
+    /** One client's log being reassembled from its `LOG_UPLOAD` batches, keyed by player ID. */
+    private class LogBatches(val name: String, val platform: String) {
+        var expected = 0
+        val parts = sortedMapOf<Int, List<String>>()
+        fun lines(): List<String> = parts.values.flatten()
+        val complete: Boolean get() = expected > 0 && parts.size >= expected
+    }
+
+    private val collectedLogs = LinkedHashMap<String, LogBatches>()
+    private var expectedLogClients = 0
 
     /** Who would take over, first to last. */
     private val _successors = MutableStateFlow(session.successorIds)
@@ -364,6 +381,51 @@ internal class HostRuntime(
         }
     }
 
+    /**
+     * Debug: asks every joined client to upload its debug log and publishes the logs in
+     * [clientLogs] as the batches arrive. A new call starts a fresh collection, so a client that is
+     * asked again re-sends its whole log. With no joined client it publishes an empty collection.
+     */
+    fun requestClientLogs() {
+        if (hasStopped) return
+        val (output, asked) = session.requestClientLogs(System.currentTimeMillis())
+        collectedLogs.clear()
+        expectedLogClients = asked.size
+        publishClientLogs()
+        apply(output)
+    }
+
+    /** One `LOG_UPLOAD` batch arrived: file it under its player and republish the collection. */
+    private fun recordClientLog(upload: HostSession.LogUploadReceived) {
+        val batches = collectedLogs.getOrPut(upload.playerId) {
+            val player = session.players.firstOrNull { it.id == upload.playerId }
+            LogBatches(player?.name ?: upload.playerId, player?.platform ?: "?")
+        }
+        batches.expected = upload.parts
+        batches.parts[upload.part] = upload.lines
+        if (collectedLogs.values.all { it.complete } && collectedLogs.size >= expectedLogClients) {
+            HyperBleLog.event("collect logs: ${collectedLogs.size}/$expectedLogClients client log(s) complete")
+        }
+        publishClientLogs()
+    }
+
+    private fun publishClientLogs() {
+        val logs = collectedLogs.entries
+            .sortedBy { seatNumber(it.key) }
+            .map { (playerId, batches) ->
+                CollectedClientLog(
+                    playerId = playerId,
+                    name = batches.name,
+                    platform = batches.platform,
+                    lines = batches.lines(),
+                    batchesReceived = batches.parts.size,
+                    batchesExpected = batches.expected,
+                )
+            }
+        val pending = logs.size < expectedLogClients || logs.any { !it.complete }
+        _clientLogs.value = ClientLogCollection(logs, expectedLogClients, pending)
+    }
+
     private fun handle(event: HostTransportEvent) {
         val now = System.currentTimeMillis()
         when (event) {
@@ -448,6 +510,7 @@ internal class HostRuntime(
     /** Sends what the session decided, one log line per recipient. */
     private fun apply(output: HostSession.Output) {
         output.notes.forEach { HyperBleLog.event(it) }
+        output.logUpload?.let(::recordClientLog)
         for (outgoing in output.outgoing) {
             val bytes = WireJson.encode(outgoing.message)
             for (recipient in outgoing.recipients) {

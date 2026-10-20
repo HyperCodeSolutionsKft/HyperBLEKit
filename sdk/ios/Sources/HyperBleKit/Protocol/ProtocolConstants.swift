@@ -55,6 +55,11 @@ enum ProtocolConstants {
     /// The debug log keeps this many lines and drops the oldest.
     static let debugLogCapacity = 500
 
+    /// How many log lines go in one `LOG_UPLOAD` batch when a client uploads its log to the host
+    /// (`SessionDiagnostics.requestClientLogs()`). Small enough to stay within a few chunks even
+    /// with long lines; a full log is sent as several batches.
+    static let logUploadBatchLines = 50
+
     /// An on-demand ping-all (`SessionDiagnostics.pingAll()`) waits this long for the clients'
     /// PONGs before it reports the round trips; a client that stayed silent gets no time.
     static let pingAllTimeout: TimeInterval = 2

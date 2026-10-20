@@ -120,4 +120,11 @@ internal object GameConstants {
 
     /** Default of `HyperBleKitConfig.logCapacity`: the log keeps this many lines and drops the oldest. */
     const val DEBUG_LOG_CAPACITY = 500
+
+    /**
+     * How many log lines go in one `LOG_UPLOAD` batch when a client uploads its log to the host
+     * (`SessionDiagnostics.requestClientLogs`). Kept small so one batch stays within a few chunks
+     * even with long lines; a full log is sent as several batches.
+     */
+    const val LOG_UPLOAD_BATCH_LINES = 50
 }

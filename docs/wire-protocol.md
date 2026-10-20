@@ -283,8 +283,12 @@ Every message has the same envelope:
 | `ACK`          | client → host   | Confirms receipt of a host `seq` | — |
 | `LEAVE`        | client → host   | Player leaves intentionally | — |
 | `PING` / `PONG`| both            | Heartbeat + latency measurement | — |
+| `LOG_REQUEST`  | host → all      | Diagnostics: asks every client to upload its debug log (end-of-run collection). `data` is empty | — |
+| `LOG_UPLOAD`   | client → host   | Diagnostics: one batch of the client's debug log — `data.part` of `data.parts` (0-based count / total), `data.lines` the log lines | — |
 
 **ACK direction:** only clients send `ACK`. Client → host messages use write-with-response, so delivery is already confirmed at the BLE level and the host never sends `ACK`.
+
+**Diagnostics messages (`LOG_REQUEST` / `LOG_UPLOAD`).** Test instrumentation, not part of the game protocol: they carry no `stateVersion`, are never ACKed and change no state. The host sends one `LOG_REQUEST` to every joined client; each client answers automatically with its whole debug log, split into `LOG_UPLOAD` batches (a batch is a fixed number of lines), which the host files per player so a single device can export the whole run's logs. An older build that does not know these ignores them, so they do not change the protocol version. `LOG_UPLOAD.data`: `{ "part": <int>, "parts": <int>, "lines": [<string>…] }`.
 
 ### Example flow
 

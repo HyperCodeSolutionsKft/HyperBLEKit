@@ -27,6 +27,10 @@ struct Message: Equatable {
         case hostSnapshot(HostSnapshot)
         case hostLeaving(HostLeaving)
         case gameOver(GameOver)
+        /// Host → all joined clients: asks each to upload its debug log (diagnostics). No payload.
+        case logRequest
+        /// Client → host: one batch of this device's debug log (diagnostics).
+        case logUpload(LogUpload)
         /// A type this build doesn't know. Logged and ignored.
         case unknown(type: String)
     }
@@ -49,6 +53,8 @@ struct Message: Equatable {
         case .hostSnapshot: return "HOST_SNAPSHOT"
         case .hostLeaving: return "HOST_LEAVING"
         case .gameOver: return "GAME_OVER"
+        case .logRequest: return "LOG_REQUEST"
+        case .logUpload: return "LOG_UPLOAD"
         case .unknown(let type): return type
         }
     }
@@ -91,6 +97,7 @@ struct Message: Equatable {
             + "successors=\(data.successors.joined(separator: ","))"
         case .hostLeaving(let data): return "next=\(data.nextHostId)"
         case .gameOver(let data): return "reason=\(data.reason)"
+        case .logUpload(let data): return "part=\(data.part + 1)/\(data.parts) lines=\(data.lines.count)"
         default: return nil
         }
     }
@@ -141,6 +148,8 @@ extension Message: Codable {
         case "HOST_SNAPSHOT": body = .hostSnapshot(try container.decode(HostSnapshot.self, forKey: .data))
         case "HOST_LEAVING": body = .hostLeaving(try container.decode(HostLeaving.self, forKey: .data))
         case "GAME_OVER": body = .gameOver(try container.decode(GameOver.self, forKey: .data))
+        case "LOG_REQUEST": body = .logRequest
+        case "LOG_UPLOAD": body = .logUpload(try container.decode(LogUpload.self, forKey: .data))
         default: body = .unknown(type: type)
         }
     }
@@ -167,7 +176,8 @@ extension Message: Codable {
         case .hostSnapshot(let data): try container.encode(data, forKey: .data)
         case .hostLeaving(let data): try container.encode(data, forKey: .data)
         case .gameOver(let data): try container.encode(data, forKey: .data)
-        case .leave, .unknown: try container.encode(NoData(), forKey: .data)
+        case .logUpload(let data): try container.encode(data, forKey: .data)
+        case .leave, .logRequest, .unknown: try container.encode(NoData(), forKey: .data)
         }
     }
 }

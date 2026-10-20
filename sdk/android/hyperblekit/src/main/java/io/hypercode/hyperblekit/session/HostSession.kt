@@ -71,6 +71,9 @@ internal class HostSession private constructor(
     /** One message and everyone who gets it. A broadcast has several recipients and one `seq`. */
     data class Outgoing(val message: Message, val recipients: List<Recipient>)
 
+    /** One `LOG_UPLOAD` batch from a client, surfaced for the runtime to reassemble. */
+    data class LogUploadReceived(val playerId: String, val part: Int, val parts: Int, val lines: List<String>)
+
     class Output {
         val outgoing = mutableListOf<Outgoing>()
         val notes = mutableListOf<String>()
@@ -89,6 +92,9 @@ internal class HostSession private constructor(
 
         /** After [frameReceived]: the frame was taken as an input of the running real-time game. */
         var inputTaken = false
+
+        /** Set when the handled message was a `LOG_UPLOAD`: one batch of a client's debug log. */
+        var logUpload: LogUploadReceived? = null
     }
 
     private class Seat(
@@ -390,6 +396,24 @@ internal class HostSession private constructor(
     }
 
     /**
+     * Asks every linked client to upload its debug log (`SessionDiagnostics.requestClientLogs`):
+     * a `LOG_REQUEST` to each. The batches come back as `LOG_UPLOAD` messages ([Output.logUpload]).
+     * Returns the player IDs that were asked, in seat order, so the runtime knows who to expect.
+     */
+    fun requestClientLogs(nowMillis: Long): Pair<Output, List<String>> {
+        val output = Output()
+        val everyone = recipients(seats)
+        if (everyone.isEmpty()) {
+            output.notes += "collect logs: no linked client to ask"
+            return output to emptyList()
+        }
+        output.outgoing += Outgoing(makeMessage(Message.Body.LogRequest, nowMillis), everyone)
+        val asked = everyone.map { it.label }.sortedBy { seatNumber(it) }
+        output.notes += "collect logs: asked ${asked.size} client(s) to upload their log"
+        return output to asked
+    }
+
+    /**
      * Ends the ping-all started by [pingAll] and returns one reply per pinged client, in seat
      * order; a client that did not answer has a null time. Empty when no round was open.
      */
@@ -557,11 +581,15 @@ internal class HostSession private constructor(
             is Message.Body.Ack -> Unit
             is Message.Body.GameAction -> gameAction(seat, body, message.seq, nowMillis, random, output)
             is Message.Body.SyncRequest -> output.outgoing += stateSync(seat, nowMillis)
+            is Message.Body.LogUpload -> {
+                output.logUpload = LogUploadReceived(seat.player.id, body.part, body.parts, body.lines)
+                output.notes += "log from ${seat.player.id}: batch ${body.part + 1}/${body.parts}, ${body.lines.size} line(s)"
+            }
             is Message.Body.Unknown -> output.notes += "ignored unknown message type ${body.type}"
             is Message.Body.JoinRequest, is Message.Body.JoinAccept, is Message.Body.JoinReject,
             is Message.Body.StateSync, is Message.Body.PlayerList, is Message.Body.HostSnapshot,
             is Message.Body.HostLeaving, is Message.Body.GameOver, is Message.Body.GameUpdate,
-            is Message.Body.Error ->
+            is Message.Body.Error, Message.Body.LogRequest ->
                 output.notes += "ignored ${message.type}: not a client message"
         }
         return output

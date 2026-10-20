@@ -182,7 +182,7 @@ class RuntimeEndToEndTest {
         val session = anna.kit.host()
         radio.advance(SHORT)
 
-        assertEquals("Counter needs 2–3 connected players", session.startGameProblem(CounterGame.id))
+        assertEquals("Counter needs 2–3 connected players, 1 connected now", session.startGameProblem(CounterGame.id))
         assertEquals("This app has no game \"chess\"", session.startGameProblem("chess"))
         session.startGame(CounterGame.id)
         radio.advance(SHORT)
@@ -557,6 +557,43 @@ class RuntimeEndToEndTest {
     }
 
     @Test
+    fun `the host collects every client's log in one request`() {
+        val (anna, bence, csaba) = lobbyOfThree()
+        val diagnostics = anna.session.diagnostics
+        // Nothing collected until it is asked for; collection is host-only.
+        assertNull(diagnostics.clientLogs.value)
+
+        diagnostics.requestClientLogs()
+        radio.advance(SHORT)
+
+        val collection = checkNotNull(diagnostics.clientLogs.value)
+        assertEquals(2, collection.expectedClients)
+        assertFalse("both clients answered, so the collection is done", collection.pending)
+        assertEquals(listOf("p2", "p3"), collection.logs.map { it.playerId })
+        assertEquals(listOf("Bence", "Csaba"), collection.logs.map { it.name })
+        assertTrue("every announced batch arrived", collection.logs.all { it.complete })
+        assertTrue("a client uploads its own log lines", collection.logs.all { it.lines.isNotEmpty() })
+        // A client never gathers logs itself.
+        assertNull(bence.session.diagnostics.clientLogs.value)
+        assertNull(csaba.session.diagnostics.clientLogs.value)
+    }
+
+    @Test
+    fun `collecting logs with no joined client gives an empty collection`() {
+        val anna = phone("Anna")
+        anna.kit.host()
+        radio.advance(SHORT)
+
+        anna.session.diagnostics.requestClientLogs()
+        radio.advance(SHORT)
+
+        val collection = checkNotNull(anna.session.diagnostics.clientLogs.value)
+        assertEquals(0, collection.expectedClients)
+        assertFalse(collection.pending)
+        assertTrue(collection.logs.isEmpty())
+    }
+
+    @Test
     fun `the speed test runs in the lobby only and its stop line says why it stopped`() {
         val lines = mutableListOf<String>()
         HyperBleLog.sink = { lines += it.message }
@@ -600,6 +637,18 @@ class RuntimeEndToEndTest {
         diagnostics.startSpeedTest(frameRate = 15, payloadSize = 64)
         radio.advance(SHORT)
         assertFalse(checkNotNull(diagnostics.hostSpeedTest.value).isRunning)
+    }
+
+    @Test
+    fun `clients stay connected across many heartbeats and the host can start a two-player game`() {
+        val (anna, bence, csaba) = lobbyOfThree()
+
+        // Far past several 10 s silence windows: the periodic heartbeat must keep every seat alive.
+        radio.advance(30 * SECOND)
+
+        assertEquals(listOf("p1", "p2", "p3"), connectedIds(anna))
+        assertEquals(3, anna.state.players.count { it.connected })
+        assertNull(anna.session.startGameProblem(CounterGame.id))
     }
 
     private fun <T : Any> assertNotNullAnd(value: T?): T {
