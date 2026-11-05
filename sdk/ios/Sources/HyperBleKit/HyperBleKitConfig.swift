@@ -45,7 +45,8 @@ public struct HyperBleKitConfig {
     /// Phones with different values still play together, over Bluetooth LE.
     public let dataPaths: DataPaths
     /// The Wi-Fi Aware service a host publishes, in DNS-SD form: an underscore, 1 to 15
-    /// lowercase letters, digits or hyphens, then `._tcp`. Every phone in a game must use the
+    /// lowercase letters, digits or hyphens (at least one letter, no hyphen first or last), then
+    /// `._tcp`. Every phone in a game must use the
     /// same one, and the app must list it under `WiFiAwareServices` in its Info.plist. Only
     /// used with `.preferWiFiAware`.
     public let wifiAwareServiceName: String
@@ -96,12 +97,16 @@ public struct HyperBleKitConfig {
     }
 
     /// The BLE identifiers this configuration stands for.
-    /// `_name._tcp`, the name 1 to 15 of `a-z`, `0-9` and `-`; the same rule as on Android.
+    /// `_name._tcp`, the name 1 to 15 of `a-z`, `0-9` and `-`, at least one letter, no hyphen
+    /// first or last; the same rule as on Android. Apple's rule is wider, but an invalid name in
+    /// Info.plist crashes the app, so the SDK keeps to a safe subset.
     static func isValidServiceName(_ name: String) -> Bool {
         guard name.hasPrefix("_"), name.hasSuffix("._tcp") else { return false }
         let inner = name.dropFirst().dropLast(5)
         return (1...15).contains(inner.count)
             && inner.unicodeScalars.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" }
+            && inner.unicodeScalars.contains { ("a"..."z").contains($0) }
+            && inner.first != "-" && inner.last != "-"
     }
 
     var layout: BLELayout {

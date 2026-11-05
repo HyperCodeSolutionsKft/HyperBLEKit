@@ -37,7 +37,8 @@ import java.util.UUID
  * @param dataPaths whether connected phones may move their messages to Wi-Fi Aware; see
  *   [DataPaths]. Phones with different values still play together, over Bluetooth LE.
  * @param wifiAwareServiceName the Wi-Fi Aware service a host publishes, in DNS-SD form: an
- *   underscore, 1 to 15 lowercase letters, digits or hyphens, then `._tcp`. Every phone in a game
+ *   underscore, 1 to 15 lowercase letters, digits or hyphens (at least one letter, no hyphen
+ *   first or last), then `._tcp`. Every phone in a game
  *   must use the same one; on iOS it must also be listed under `WiFiAwareServices` in the app's
  *   Info.plist. Only used with [DataPaths.PREFER_WIFI_AWARE].
  * @throws IllegalArgumentException if a value is outside its range.
@@ -108,7 +109,8 @@ public class HyperBleKitConfig(
         /** The default Wi-Fi Aware service name, `_hyperblekit._tcp`. */
         public const val DEFAULT_WIFI_AWARE_SERVICE_NAME: String = "_hyperblekit._tcp"
 
-        private val SERVICE_NAME = Regex("_[a-z0-9-]{1,15}\\._tcp")
+        /** 1 to 15 of `a-z 0-9 -`, at least one letter, no hyphen first or last (Apple's rule; iOS crashes otherwise). */
+        private val SERVICE_NAME = Regex("_(?=[a-z0-9-]*[a-z])[a-z0-9](?:[a-z0-9-]{0,13}[a-z0-9])?\\._tcp")
 
         private const val MIN_PLAYERS = 2
         private const val MAX_PREFIX_LENGTH = 4

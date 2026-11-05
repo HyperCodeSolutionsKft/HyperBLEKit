@@ -30,6 +30,8 @@ internal class HybridClientTransport(
     private val ble: GameClientTransport,
     private val aware: AwareClientPath,
     private val scheduler: MainScheduler,
+    /** Only a host on this platform is asked for a data path; see [AwareWire.takesAwareFrom]. */
+    private val platform: String = AwareWire.THIS_PLATFORM,
 ) : GameClientTransport {
 
     private enum class AwareState { NONE, ASKED, CONNECTING, UP }
@@ -139,7 +141,7 @@ internal class HybridClientTransport(
     private fun bleEvent(event: ClientTransportEvent) {
         when (event) {
             is ClientTransportEvent.GameInfoRead -> {
-                hostTakesAware = AwareWire.hasAwareFlag(event.bytes)
+                hostTakesAware = AwareWire.takesAwareFrom(event.bytes, platform)
                 listener?.invoke(event)
             }
             is ClientTransportEvent.Ready -> {

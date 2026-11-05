@@ -106,11 +106,12 @@ class HybridTransportTest {
     }
 
     private fun bytes(text: String) = text.toByteArray()
+    private val awareInfo get() = AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"android\"}"))
     private fun control(control: AwareControl) = ClientTransportEvent.MessageReceived(AwareControl.encode(control), 1)
 
     /** Ready with a host that takes Wi-Fi Aware, offered and up. */
     private fun upgradedClient() {
-        ble.emit(ClientTransportEvent.GameInfoRead(AwareWire.withAwareFlag(bytes("{\"v\":1}"))))
+        ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         ble.emit(control(AwareControl.Offer(offer)))
         aware.emit(AwareClientEvent.Up)
@@ -122,7 +123,11 @@ class HybridTransportTest {
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         assertTrue(ble.controls.isEmpty())
 
-        ble.emit(ClientTransportEvent.GameInfoRead(AwareWire.withAwareFlag(bytes("{\"v\":1}"))))
+        ble.emit(ClientTransportEvent.GameInfoRead(AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"ios\"}"))))
+        ble.emit(ClientTransportEvent.Ready(CHUNK))
+        assertTrue("never across platforms", ble.controls.isEmpty())
+
+        ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         assertEquals(listOf(AwareControl.Hello()), ble.controls)
     }
@@ -182,7 +187,7 @@ class HybridTransportTest {
 
     @Test
     fun `a data path that cannot be set up is reported as failed`() {
-        ble.emit(ClientTransportEvent.GameInfoRead(AwareWire.withAwareFlag(bytes("{}"))))
+        ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         ble.emit(control(AwareControl.Offer(offer)))
         aware.emit(AwareClientEvent.Down("refused"))
@@ -191,7 +196,7 @@ class HybridTransportTest {
 
     @Test
     fun `a declined client asks again later, three times in all`() {
-        ble.emit(ClientTransportEvent.GameInfoRead(AwareWire.withAwareFlag(bytes("{}"))))
+        ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         repeat(HybridClientTransport.MAX_HELLO_ATTEMPTS + 1) {
             ble.emit(control(AwareControl.Decline(DeclineReason.NO_FREE_DATA_PATH)))

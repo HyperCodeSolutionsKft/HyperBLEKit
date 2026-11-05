@@ -75,9 +75,10 @@ final class HybridTransportTests: XCTestCase {
     }
 
     private func bytes(_ text: String) -> Data { Data(text.utf8) }
+    private var awareInfo: Data { AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"ios\"}")) }
 
     private func upgraded() {
-        ble.events.send(.gameInfo(AwareWire.withAwareFlag(bytes("{\"v\":1}"))))
+        ble.events.send(.gameInfo(awareInfo))
         ble.events.send(.ready(maxChunkLength: Self.chunk))
         ble.events.send(.message(AwareControl.offer(offer).encoded(), chunks: 1))
         aware.events.send(.up)
@@ -87,7 +88,10 @@ final class HybridTransportTests: XCTestCase {
         ble.events.send(.gameInfo(bytes("{\"v\":1}")))
         ble.events.send(.ready(maxChunkLength: Self.chunk))
         XCTAssertTrue(ble.controls.isEmpty)
-        ble.events.send(.gameInfo(AwareWire.withAwareFlag(bytes("{\"v\":1}"))))
+        ble.events.send(.gameInfo(AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"android\"}"))))
+        ble.events.send(.ready(maxChunkLength: Self.chunk))
+        XCTAssertTrue(ble.controls.isEmpty, "never across platforms")
+        ble.events.send(.gameInfo(awareInfo))
         ble.events.send(.ready(maxChunkLength: Self.chunk))
         XCTAssertEqual(ble.controls, [.hello])
     }
@@ -129,7 +133,7 @@ final class HybridTransportTests: XCTestCase {
     }
 
     func testADeclinedClientAsksAgainThreeTimesInAll() {
-        ble.events.send(.gameInfo(AwareWire.withAwareFlag(bytes("{}"))))
+        ble.events.send(.gameInfo(awareInfo))
         ble.events.send(.ready(maxChunkLength: Self.chunk))
         for _ in 0...HybridClientTransport.maxHelloAttempts {
             ble.events.send(.message(AwareControl.decline(.noFreeDataPath).encoded(), chunks: 1))

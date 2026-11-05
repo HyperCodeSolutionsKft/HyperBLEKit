@@ -639,5 +639,81 @@
       "json": "hello",
       "expected": false
     }
+  ],
+  "takesAwareFrom": [
+    {
+      "name": "same_platform",
+      "json": "{\"v\":1,\"hostPlatform\":\"android\",\"aware\":1}",
+      "platform": "android",
+      "expected": true
+    },
+    {
+      "name": "ios_host_ios_client",
+      "json": "{\"v\":1,\"hostPlatform\":\"ios\",\"aware\":1}",
+      "platform": "ios",
+      "expected": true
+    },
+    {
+      "name": "other_platform",
+      "json": "{\"v\":1,\"hostPlatform\":\"ios\",\"aware\":1}",
+      "platform": "android",
+      "expected": false
+    },
+    {
+      "name": "no_flag",
+      "json": "{\"v\":1,\"hostPlatform\":\"android\"}",
+      "platform": "android",
+      "expected": false
+    }
+  ],
+  "serviceNames": [
+    {
+      "name": "_hyperblekit._tcp",
+      "valid": true
+    },
+    {
+      "name": "_a._tcp",
+      "valid": true
+    },
+    {
+      "name": "_my-game2._tcp",
+      "valid": true
+    },
+    {
+      "name": "_123456789012345._tcp",
+      "valid": false
+    },
+    {
+      "name": "_abcdefghijklmnop._tcp",
+      "valid": false
+    },
+    {
+      "name": "_-game._tcp",
+      "valid": false
+    },
+    {
+      "name": "_game-._tcp",
+      "valid": false
+    },
+    {
+      "name": "_42._tcp",
+      "valid": false
+    },
+    {
+      "name": "_Game._tcp",
+      "valid": false
+    },
+    {
+      "name": "_game._udp",
+      "valid": false
+    },
+    {
+      "name": "game._tcp",
+      "valid": false
+    },
+    {
+      "name": "_._tcp",
+      "valid": false
+    }
   ]
 }

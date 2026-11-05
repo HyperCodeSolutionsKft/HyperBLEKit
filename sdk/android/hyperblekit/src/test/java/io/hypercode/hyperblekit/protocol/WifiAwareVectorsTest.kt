@@ -128,5 +128,20 @@ class WifiAwareVectorsTest {
             val has = AwareWire.hasAwareFlag(case.getString("json").toByteArray(Charsets.UTF_8))
             assertEquals(case.getString("name"), case.getBoolean("expected"), has)
         }
+        for (case in vectors.cases("takesAwareFrom")) {
+            val takes = AwareWire.takesAwareFrom(case.getString("json").toByteArray(Charsets.UTF_8), case.getString("platform"))
+            assertEquals(case.getString("name"), case.getBoolean("expected"), takes)
+        }
+    }
+
+    @Test
+    fun `service names follow the safe DNS-SD subset`() {
+        for (case in vectors.cases("serviceNames")) {
+            val name = case.getString("name")
+            val valid = runCatching {
+                io.hypercode.hyperblekit.HyperBleKitConfig(games = emptyList(), wifiAwareServiceName = name)
+            }.isSuccess
+            assertEquals(name, case.getBoolean("valid"), valid)
+        }
     }
 }

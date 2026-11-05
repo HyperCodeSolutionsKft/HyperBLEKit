@@ -17,6 +17,18 @@ enum AwareWire {
     /// The GameInfo field an Aware-capable host adds: `"aware":1`.
     static let gameInfoField = "aware"
 
+    /// The `hostPlatform` value of this build in GameInfo.
+    static let thisPlatform = "ios"
+
+    /// Whether a client on `platform` ("android" / "ios") should ask this host for a data path:
+    /// the GameInfo has the flag and the host runs on the same platform. Wi-Fi Aware between
+    /// Android and iOS is not attempted: discovery works differently on the two.
+    static func takesAware(from info: Data, platform: String) -> Bool {
+        guard hasAwareFlag(info),
+              let object = try? JSONSerialization.jsonObject(with: info) as? [String: Any] else { return false }
+        return object["hostPlatform"] as? String == platform
+    }
+
     /// Whether a message received over BLE is a transport-control message, not a protocol one.
     static func isControl(_ message: Data) -> Bool {
         message.first == controlMarker
@@ -173,7 +185,8 @@ enum AwareControl: Equatable {
 /// Records on the Wi-Fi Aware TCP stream: `[length: 4 bytes, big-endian][kind: 1][body]`, where
 /// `length` counts the kind byte and the body.
 enum AwareStream {
-    /// Client → host, the first record: body = the link token.
+    /// Client → host, the first record: body = the link token. The host answers with the same
+    /// record once it has tied the connection to its link.
     static let hello: UInt8 = 0x01
     /// A whole protocol message.
     static let message: UInt8 = 0x02

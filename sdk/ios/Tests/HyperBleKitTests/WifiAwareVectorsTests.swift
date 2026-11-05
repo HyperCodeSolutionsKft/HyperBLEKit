@@ -104,5 +104,18 @@ final class WifiAwareVectorsTests: XCTestCase {
             XCTAssertEqual(AwareWire.hasAwareFlag(Data((vector["json"] as! String).utf8)),
                            vector["expected"] as! Bool, vector["name"] as! String)
         }
+        XCTAssertFalse(cases("takesAwareFrom").isEmpty)
+        for vector in cases("takesAwareFrom") {
+            XCTAssertEqual(AwareWire.takesAware(from: Data((vector["json"] as! String).utf8), platform: vector["platform"] as! String),
+                           vector["expected"] as! Bool, vector["name"] as! String)
+        }
+    }
+
+    func testServiceNamesFollowTheSafeDNSSDSubset() {
+        XCTAssertFalse(cases("serviceNames").isEmpty)
+        for vector in cases("serviceNames") {
+            let name = vector["name"] as! String
+            XCTAssertEqual(HyperBleKitConfig.isValidServiceName(name), vector["valid"] as! Bool, name)
+        }
     }
 }

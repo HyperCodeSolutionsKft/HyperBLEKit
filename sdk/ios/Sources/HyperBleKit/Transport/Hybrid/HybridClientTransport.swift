@@ -20,6 +20,8 @@ final class HybridClientTransport: GameClientTransport {
     private let ble: GameClientTransport
     private let aware: AwareClientPath
     private let scheduler: MainScheduler
+    /// Only a host on this platform is asked for a data path; see `AwareWire.takesAware(from:platform:)`.
+    private let platform: String
     private let events = PassthroughSubject<ClientTransportEvent, Never>()
     private var cancellables = Set<AnyCancellable>()
     private var hostTakesAware = false
@@ -35,10 +37,12 @@ final class HybridClientTransport: GameClientTransport {
         deliver: { [weak self] in self?.events.send(.message($0, chunks: 1)) },
         log: { [weak self] in self?.log($0) })
 
-    init(ble: GameClientTransport, aware: AwareClientPath, scheduler: @escaping MainScheduler = MainSchedulers.main) {
+    init(ble: GameClientTransport, aware: AwareClientPath, scheduler: @escaping MainScheduler = MainSchedulers.main,
+         platform: String = AwareWire.thisPlatform) {
         self.ble = ble
         self.aware = aware
         self.scheduler = scheduler
+        self.platform = platform
         ble.eventsPublisher.sink { [weak self] in self?.bleEvent($0) }.store(in: &cancellables)
         aware.eventsPublisher.sink { [weak self] in self?.awareEvent($0) }.store(in: &cancellables)
     }
@@ -128,7 +132,7 @@ final class HybridClientTransport: GameClientTransport {
     private func bleEvent(_ event: ClientTransportEvent) {
         switch event {
         case .gameInfo(let bytes):
-            hostTakesAware = AwareWire.hasAwareFlag(bytes)
+            hostTakesAware = AwareWire.takesAware(from: bytes, platform: platform)
             events.send(event)
         case .ready(let maxChunkLength):
             self.maxChunkLength = maxChunkLength

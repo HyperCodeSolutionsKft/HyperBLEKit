@@ -364,6 +364,8 @@ internal class WifiAwareHostPath(
             return null
         }
         entry.value.connection = connection
+        // The echo tells the client it reached the right host (an iPhone client cannot tell otherwise).
+        connection.sendRecord(AwareStream.HELLO, token)
         emit(AwareHostEvent.PathUp(entry.key))
         return entry.key
     }

@@ -45,6 +45,22 @@ internal object AwareWire {
             false
         }
 
+    /**
+     * Whether a client on [platform] (`"android"` / `"ios"`) should ask this host for a data path:
+     * the GameInfo has the flag and the host runs on the same platform. Wi-Fi Aware between
+     * Android and iOS is not attempted: discovery works differently on the two.
+     */
+    fun takesAwareFrom(info: ByteArray, platform: String): Boolean =
+        hasAwareFlag(info) &&
+            try {
+                org.json.JSONObject(String(info, Charsets.UTF_8)).optString("hostPlatform") == platform
+            } catch (_: org.json.JSONException) {
+                false
+            }
+
+    /** The `hostPlatform` value of this build in GameInfo. */
+    const val THIS_PLATFORM = "android"
+
     /** Whether a message received over BLE is a transport-control message, not a protocol one. */
     fun isControl(message: ByteArray): Boolean = message.isNotEmpty() && message[0].toInt() == CONTROL_MARKER
 
@@ -206,7 +222,10 @@ internal sealed interface AwareControl {
  * while the connection lives.
  */
 internal object AwareStream {
-    /** Client → host, the first record: `body` = the link token. */
+    /**
+     * Client → host, the first record: `body` = the link token. The host answers with the same
+     * record once it has tied the connection to its link.
+     */
     const val HELLO = 0x01
 
     /** A whole protocol message. */
