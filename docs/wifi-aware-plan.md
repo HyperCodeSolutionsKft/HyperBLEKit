@@ -1,6 +1,6 @@
 # Wi-Fi Aware: feature plan
 
-Status: phases 1 to 3 implemented on branch `feature/wifi-aware`; phase 3 not yet built with Xcode 26, nothing tested on real phones. See "Implementation status" at the end.
+Status: phases 1 to 5 done on branch `feature/wifi-aware`; phase 3 not yet built with Xcode 26, phase 4 experimental, nothing tested on real phones. See "Implementation status" at the end.
 
 ## Goal
 
@@ -243,5 +243,27 @@ How the iPhone design differs from Android, from Apple's documentation:
 4. **Service names** follow Apple's rules (an invalid Info.plist entry crashes the app) on both
    platforms.
 
-Next: build with Xcode 26 and fix what the real SDK reports, then real-device testing of phases
-2 and 3.
+### Phase 4 (Android ↔ iPhone, experimental), 2026-11-05
+
+Research first (Apple developer forums up to Sep 2026, Espressif's ESP-to-iPhone write-up, the
+Android 14–17 reference): **nobody has reported an Android ↔ iPhone Wi-Fi Aware data path.**
+Android phones (Galaxy S25 at best; Pixel 9 and Xiaomi 14 lack pairing support) reach pairing and
+fail at the data path; Apple points to chipset and firmware. Built anyway, behind
+`experimentalCrossPlatformWifiAware` / `experimentalCrossPlatformWiFiAware` (off by default):
+
+- GameInfo `"awarePaired":1`; a client uses the paired scheme with a host of the other platform
+  only when its option is on (shared vectors `awareScheme`).
+- Android 14+: `WifiAwarePairing` (pairing by code in both directions), the paired scheme in
+  `WifiAwareHostPath` and `WifiAwareClientPath`.
+- Android 17's framework-offloaded pairing (`setFrameworkOffloadedPairingEnabled`, "37.2") is not
+  in the 37.0 SDK this project compiles against; the explicit Android 14 API is used instead.
+- Main unknown: the data-path security for a paired peer (see the wire specification).
+
+### Phase 5 (docs), 2026-11-05
+
+Wire specification (schemes, iPhone and cross-platform flows), guide (setup per platform,
+cross-platform pairing, troubleshooting, platform differences), README, Module.md, POM description.
+
+Next: build with Xcode 26 and fix what the real SDK reports; test on real phones: two Android
+phones (phase 2), two iPhones (phase 3), then an Android 14+ phone with pairing support and an
+iPhone (phase 4).

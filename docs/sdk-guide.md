@@ -2,7 +2,8 @@
 
 HyperBleKit gives a mobile app local multiplayer for phones that are near each other. It works
 between Android phones and iPhones in the same game, for up to 10 players, over Bluetooth Low
-Energy (BLE) only: no Wi-Fi, no internet, no server, no pairing dialog.
+Energy (BLE): no Wi-Fi network, no internet, no server, no pairing dialog. Optionally, connected
+phones that support Wi-Fi Aware move their messages to it (see [Wi-Fi Aware](#wi-fi-aware)).
 
 You write two things: the rules of your game as a **game module** (a state machine without any
 I/O) and your own screens. The SDK does the rest: one phone **hosts** a game and the others find
@@ -1105,7 +1106,8 @@ The last messages of a leaving phone are sent in the background for up to 2 seco
 | `maxPlayers` | 10 | 2 to 10 | Seats in a game, the host included. |
 | `logCapacity` | 500 | at least 1 | Lines kept in the log's buffer. The log is shared by the process, so the kit created last decides. |
 | `dataPaths` | `BLE_ONLY` / `.bleOnly` | `BLE_ONLY`, `PREFER_WIFI_AWARE` (iOS `.bleOnly`, `.preferWiFiAware`) | Whether connected phones may move their messages to Wi-Fi Aware. See [Wi-Fi Aware](#wi-fi-aware). |
-| `wifiAwareServiceName` | `_hyperblekit._tcp` | `_` + 1 to 15 of `a-z 0-9 -` + `._tcp` | The Wi-Fi Aware service a host publishes. Only used with `PREFER_WIFI_AWARE`. |
+| `wifiAwareServiceName` | `_hyperblekit._tcp` | `_` + 1 to 15 of `a-z 0-9 -` (a letter among them, no hyphen first or last) + `._tcp` | The Wi-Fi Aware service a host publishes. Only used with `PREFER_WIFI_AWARE`. |
+| `experimentalCrossPlatformWifiAware` (iOS `experimentalCrossPlatformWiFiAware`) | `false` | | **Experimental.** Also try Wi-Fi Aware between an Android phone and an iPhone. See [Android ↔ iPhone (experimental)](#android--iphone-experimental). |
 
 A value outside its limits is a programming error: Android throws `IllegalArgumentException`
 from the constructor, iOS stops the program (`precondition`).
@@ -1187,7 +1189,7 @@ says what each link does: `PATH … offering Wi-Fi Aware`, `PATH up over Wi-Fi A
 |----------|--------|
 | Android ↔ Android | Implemented, Android 10 (API 29) and later, on phones that report `android.hardware.wifi.aware`. **Not yet tested on real phones.** |
 | iPhone ↔ iPhone | Implemented for iOS 26 on iPhone 12 and later, after a one-time pairing of the two iPhones. Needs the app built with Xcode 26 (iOS 26 SDK); built with an older Xcode, an iPhone plays over Bluetooth LE. **Not yet built with Xcode 26 nor tested on real phones.** |
-| Android ↔ iPhone | Over Bluetooth LE. The two platforms find Wi-Fi Aware peers in incompatible ways. |
+| Android ↔ iPhone | Over Bluetooth LE. With the experimental option on both phones, Wi-Fi Aware is tried after a pairing; see [below](#android--iphone-experimental). **Nobody has reported this working yet.** |
 
 ### Android setup
 
@@ -1260,6 +1262,45 @@ to 12, location services must also be switched on for Wi-Fi Aware.
 `HyperBleKit.isWiFiAwareAvailable` is true when the iPhone, the iOS version, the build and the
 Info.plist allow Wi-Fi Aware; it does not say whether a paired iPhone is near. Wi-Fi Aware does
 not run in the simulator.
+
+### Android ↔ iPhone (experimental)
+
+An iPhone uses Wi-Fi Aware only with devices it has paired with, by the pairing of Wi-Fi Aware 4.0
+(a six-digit code), and it finds its peers differently from Android. With
+`experimentalCrossPlatformWifiAware = true` (iOS `experimentalCrossPlatformWiFiAware: true`) on
+**both** phones, an Android phone speaks the iPhone's way with iPhones; Android phones among
+themselves keep their own.
+
+What it needs on Android: Android 14 or later and a Wi-Fi chip that supports Wi-Fi Aware pairing
+(`kit.wifiAwarePairing?.isSupported`). Pair once, in either direction:
+
+| This phone | The other phone | Who types the code |
+|------------|-----------------|--------------------|
+| Android: `kit.wifiAwarePairing?.waitForPairing()` returns the code; show it | iPhone: `WiFiAwarePairingButton(role: .pairWithNearbyPhone)`, pick the Android phone | The iPhone user types the Android code |
+| Android: `kit.wifiAwarePairing?.pairWithNearbyPhone()`, then `enterPin(code)` once `state` is `EnterPin` | iPhone: `WiFiAwarePairingButton(role: .waitForPairing)` | The Android user types the iPhone code |
+
+```kotlin
+val pairing = kit.wifiAwarePairing ?: return    // null without the experimental option
+pairing.state.collect { state ->
+    when (state) {
+        is WifiAwarePairingState.ShowPin -> showCode(state.pin)
+        WifiAwarePairingState.EnterPin -> askForCode { pairing.enterPin(it) }
+        is WifiAwarePairingState.Paired -> showPaired(state.alias)
+        is WifiAwarePairingState.Failed -> showError(state.reason)
+        else -> Unit
+    }
+}
+```
+
+Hosting does not stop a pairing: an Android host accepts the code while it waits for one.
+`forgetPairedDevices()` removes every pairing of the app.
+
+**Expect it to fall back to Bluetooth LE.** As of late 2026 nobody has reported an Android phone
+and an iPhone exchanging data over Wi-Fi Aware: in Apple's developer forums, Android phones reach
+the pairing at best, and fail at the data path. Whether it works depends on the phone's Wi-Fi chip
+and firmware, and Android does not document how a data path with a paired peer is secured; the SDK
+makes its best guess and logs every step (`Wi-Fi Aware pairing: …`, `Wi-Fi Aware: … paired …`).
+The game is never affected: it continues over Bluetooth LE.
 
 ### Limits
 
@@ -1428,6 +1469,19 @@ ask a second time; the user has to change it in Settings.
   screens, both platforms let you construct `SessionState`, `Player`, `DiscoveredGame` and the
   other value types yourself, for previews and tests.
 
+**Wi-Fi Aware is never used.**
+The log says why for each link. `Wi-Fi Aware not supported here` on the host, or no `PATH` lines
+at all: check `isWifiAwareAvailable` / `isWiFiAwareAvailable`, `dataPaths`, the permissions
+(Android) or the entitlement and Info.plist entry (iOS), and that Wi-Fi is on and the hotspot off.
+`PATH host declined Wi-Fi Aware (no_free_data_path)`: the host's chip holds no more data paths;
+the client asks again later. `Wi-Fi Aware not set up (…)`: the data path did not come up within
+20 s; between two iPhones, the usual reason is that they are not paired. Between an Android phone
+and an iPhone nothing is tried without the experimental option on both.
+
+**The app stops on iOS when it hosts or joins with Wi-Fi Aware.**
+The service is missing from, or wrong in, `WiFiAwareServices` in the Info.plist. It must be
+exactly `wifiAwareServiceName`, with both `Publishable` and `Subscribable`.
+
 **This phone cannot host (Android).**
 Its Bluetooth chip cannot advertise. `kit.canHost` is false, and a session from `host()` has
 `state.advertising == AdvertisingState.Unsupported(reason)`. Such a phone can still join and
@@ -1519,6 +1573,9 @@ carry over one to one; each is explained where it comes up above.
 | `canRunSpeedTest` | `StateFlow<Boolean>` | plain property |
 | Log | `HyperBleLog` object, `LogEntry`, also Logcat | `HyperBleLog.shared`, `Entry`, `text` |
 | No-Bluetooth stand-in | none | on the iOS Simulator |
+| Wi-Fi Aware available | `isWifiAwareAvailable`; Android 10+, permissions in `requiredPermissions(config)` | `isWiFiAwareAvailable`; iOS 26, iPhone 12+, entitlement and Info.plist, built with Xcode 26 |
+| Wi-Fi Aware between two phones of the platform | no pairing | one-time pairing (`WiFiAwarePairingButton`) |
+| Pairing with the other platform (experimental) | `wifiAwarePairing`: `waitForPairing()`, `pairWithNearbyPhone()`, `enterPin()` | `WiFiAwarePairingButton` |
 
 ## Where to read more
 
