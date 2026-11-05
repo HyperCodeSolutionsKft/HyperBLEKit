@@ -98,6 +98,8 @@ final class WiFiAwareHostPath: AwareHostPath {
     var eventsPublisher: AnyPublisher<AwareHostEvent, Never> { events.eraseToAnyPublisher() }
     var isSupported: Bool { WiFiAwareSupport.isSupported(serviceName: serviceName) }
     var maxDataPaths: Int { WACapabilities.maximumConnectableDevices }
+    /// An iPhone host only ever takes paired clients.
+    var acceptsPairedClients: Bool { isSupported }
 
     func start() {
         stop()
@@ -271,9 +273,13 @@ final class WiFiAwareClientPath: AwareClientPath {
     }
 
     var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { events.eraseToAnyPublisher() }
-    var isSupported: Bool { WiFiAwareSupport.isSupported(serviceName: serviceName) }
 
-    func connect(_ offer: AwareOffer) {
+    /// An iPhone reaches any host by the paired scheme only.
+    func supports(_ scheme: AwareScheme) -> Bool {
+        scheme == .paired && WiFiAwareSupport.isSupported(serviceName: serviceName)
+    }
+
+    func connect(_ offer: AwareOffer, scheme: AwareScheme) {
         close()
         let armed = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + WiFiAwareSupport.setupTimeout) { [weak self] in

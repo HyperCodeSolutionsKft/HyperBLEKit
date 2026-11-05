@@ -39,11 +39,15 @@ final class HybridTransportTests: XCTestCase {
     private final class AwareClient: AwareClientPath {
         let events = PassthroughSubject<AwareClientEvent, Never>()
         var connectedTo: AwareOffer?
+        var connectedScheme: AwareScheme?
         var sent: [Data] = []
         var flushCompletion: (() -> Void)?
         var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { events.eraseToAnyPublisher() }
-        var isSupported: Bool { true }
-        func connect(_ offer: AwareOffer) { connectedTo = offer }
+        func supports(_ scheme: AwareScheme) -> Bool { true }
+        func connect(_ offer: AwareOffer, scheme: AwareScheme) {
+            connectedTo = offer
+            connectedScheme = scheme
+        }
         func send(_ message: Data) -> Bool {
             sent.append(message)
             return true
@@ -94,6 +98,22 @@ final class HybridTransportTests: XCTestCase {
         ble.events.send(.gameInfo(awareInfo))
         ble.events.send(.ready(maxChunkLength: Self.chunk))
         XCTAssertEqual(ble.controls, [.hello])
+    }
+
+    func testAHostOnTheOtherPlatformIsAskedOnlyWithTheExperimentalOption() {
+        let androidHost = AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"android\"}"), paired: true)
+        ble.events.send(.gameInfo(androidHost))
+        ble.events.send(.ready(maxChunkLength: Self.chunk))
+        XCTAssertTrue(ble.controls.isEmpty)
+
+        let crossBle = BLEClient(), crossAware = AwareClient()
+        let cross = HybridClientTransport(ble: crossBle, aware: crossAware, scheduler: scheduler.schedule, crossPlatform: true)
+        crossBle.events.send(.gameInfo(androidHost))
+        crossBle.events.send(.ready(maxChunkLength: Self.chunk))
+        XCTAssertEqual(crossBle.controls, [.hello])
+        crossBle.events.send(.message(AwareControl.offer(offer).encoded(), chunks: 1))
+        XCTAssertEqual(crossAware.connectedScheme, .paired)
+        withExtendedLifetime(cross) {}
     }
 
     func testAnUpgradedClientSendsOverWiFiAwareAfterTellingTheHost() {
@@ -189,6 +209,7 @@ final class HybridTransportTests: XCTestCase {
         var isSupported = true
         var isReady = true
         var maxDataPaths = 1
+        var acceptsPairedClients = false
         var closed: [LinkID] = []
         var sent: [Data] = []
         var eventsPublisher: AnyPublisher<AwareHostEvent, Never> { events.eraseToAnyPublisher() }

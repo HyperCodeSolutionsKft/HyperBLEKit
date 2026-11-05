@@ -20,11 +20,14 @@ final class HybridClientTransport: GameClientTransport {
     private let ble: GameClientTransport
     private let aware: AwareClientPath
     private let scheduler: MainScheduler
-    /// Only a host on this platform is asked for a data path; see `AwareWire.takesAware(from:platform:)`.
+    /// This phone's platform; see `AwareWire.scheme(for:platform:crossPlatform:)`.
     private let platform: String
+    /// A host on the other platform may be asked too (experimental).
+    private let crossPlatform: Bool
     private let events = PassthroughSubject<ClientTransportEvent, Never>()
     private var cancellables = Set<AnyCancellable>()
-    private var hostTakesAware = false
+    /// How the host of the current connection can be reached over Wi-Fi Aware; nil: not at all.
+    private var hostScheme: AwareScheme?
     private var awareState = AwareState.none
     private var maxChunkLength = 0
     private var helloAttempts = 0
@@ -38,11 +41,12 @@ final class HybridClientTransport: GameClientTransport {
         log: { [weak self] in self?.log($0) })
 
     init(ble: GameClientTransport, aware: AwareClientPath, scheduler: @escaping MainScheduler = MainSchedulers.main,
-         platform: String = AwareWire.thisPlatform) {
+         platform: String = AwareWire.thisPlatform, crossPlatform: Bool = false) {
         self.ble = ble
         self.aware = aware
         self.scheduler = scheduler
         self.platform = platform
+        self.crossPlatform = crossPlatform
         ble.eventsPublisher.sink { [weak self] in self?.bleEvent($0) }.store(in: &cancellables)
         aware.eventsPublisher.sink { [weak self] in self?.awareEvent($0) }.store(in: &cancellables)
     }
@@ -114,7 +118,7 @@ final class HybridClientTransport: GameClientTransport {
         isClosing = false
         if awareState == .connecting || awareState == .up { aware.close() }
         awareState = .none
-        hostTakesAware = false
+        hostScheme = nil
         helloAttempts = 0
         gate.reset()
     }
@@ -132,12 +136,12 @@ final class HybridClientTransport: GameClientTransport {
     private func bleEvent(_ event: ClientTransportEvent) {
         switch event {
         case .gameInfo(let bytes):
-            hostTakesAware = AwareWire.takesAware(from: bytes, platform: platform)
+            hostScheme = AwareWire.scheme(for: bytes, platform: platform, crossPlatform: crossPlatform)
             events.send(event)
         case .ready(let maxChunkLength):
             self.maxChunkLength = maxChunkLength
             events.send(event)
-            if hostTakesAware && aware.isSupported && awareState == .none { sayHello() }
+            if let scheme = hostScheme, aware.supports(scheme), awareState == .none { sayHello() }
         case .message(let bytes, _):
             if AwareWire.isControl(bytes) { control(bytes) } else { events.send(event) }
         case .disconnected:
@@ -158,10 +162,10 @@ final class HybridClientTransport: GameClientTransport {
     private func control(_ bytes: Data) {
         switch AwareControl.decode(bytes) {
         case .offer(let offer):
-            guard awareState == .asked else { return }
+            guard awareState == .asked, let scheme = hostScheme else { return }
             awareState = .connecting
-            log("PATH host offers Wi-Fi Aware, connecting")
-            aware.connect(offer)
+            log("PATH host offers Wi-Fi Aware, connecting (\(scheme == .nan ? "nan" : "paired"))")
+            aware.connect(offer, scheme: scheme)
         case .decline(let reason):
             guard awareState == .asked else { return }
             awareState = .none

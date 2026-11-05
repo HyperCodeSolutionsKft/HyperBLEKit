@@ -41,6 +41,12 @@ import java.net.Socket
  * 4. The client connects over TCP and sends a `HELLO` record with the token: the link's path is
  *    up ([AwareHostEvent.PathUp]).
  *
+ * **Experimental, paired scheme** ([crossPlatform], Android 14 with Wi-Fi Aware pairing): the
+ * publication also takes pairing requests while [pairing] waits for one, and for every peer that
+ * pairs or verifies an earlier pairing (an iPhone) the host requests a data path secured by the
+ * pairing, at once, without a discovery message: an iPhone sends none. Its TCP connection is then
+ * tied to a link by the token in its HELLO, as for any client.
+ *
  * If Wi-Fi Aware becomes unavailable (Wi-Fi off, hotspot on), every data path breaks and the
  * links fall back to BLE; publishing starts again by itself once it is back.
  *
@@ -51,6 +57,8 @@ import java.net.Socket
 internal class WifiAwareHostPath(
     context: Context,
     private val serviceName: String,
+    private val crossPlatform: Boolean = false,
+    private val pairing: io.hypercode.hyperblekit.WifiAwarePairing? = null,
 ) : AwareHostPath {
 
     private class Pending(val token: ByteArray, val passphrase: String) {
@@ -73,6 +81,9 @@ internal class WifiAwareHostPath(
     private var server: ServerSocket? = null
     private var instanceId = ByteArray(0)
     private val links = LinkedHashMap<LinkId, Pending>()
+
+    /** Data paths requested for paired peers (paired scheme), by peer. */
+    private val pairedNetworks = HashMap<PeerHandle, ConnectivityManager.NetworkCallback>()
 
     /** Sockets accepted that have not sent their HELLO yet. */
     private val unbound = HashSet<AwareConnection>()
@@ -105,6 +116,9 @@ internal class WifiAwareHostPath(
         } else {
             WifiAwareSupport.ASSUMED_DATA_PATHS
         }
+
+    override val acceptsPairedClients: Boolean
+        get() = crossPlatform && WifiAwareSupport.isPairingSupported(appContext)
 
     override fun setListener(listener: ((AwareHostEvent) -> Unit)?) {
         this.listener = listener
@@ -216,11 +230,14 @@ internal class WifiAwareHostPath(
         server = socket
         startAcceptLoop(socket, generation)
         instanceId = WifiAwareSupport.randomId()
-        val config = PublishConfig.Builder()
+        val builder = PublishConfig.Builder()
             .setServiceName(serviceName)
             .setServiceSpecificInfo(AwareWire.serviceInfo(instanceId))
             .setPublishType(PublishConfig.PUBLISH_TYPE_UNSOLICITED)
-            .build()
+        if (acceptsPairedClients && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            builder.setPairingConfig(WifiAwareSupport.publisherPairingConfig())
+        }
+        val config = builder.build()
         val armed = generation
         guarded("publish") {
             session.publish(config, object : DiscoverySessionCallback() {
@@ -231,6 +248,7 @@ internal class WifiAwareHostPath(
                     }
                     publishSession = session
                     isReady = true
+                    pairing?.hostIsPublishing = true
                     HyperBleLog.event("Wi-Fi Aware: publishing $serviceName, port ${socket.localPort}")
                 }
 
@@ -248,6 +266,39 @@ internal class WifiAwareHostPath(
                 override fun onMessageReceived(peerHandle: PeerHandle, message: ByteArray) {
                     if (armed == generation) discoveryMessage(peerHandle, message)
                 }
+
+                // --- Paired scheme (experimental); only called on Android 14 and later ---
+
+                override fun onPairingSetupRequestReceived(peerHandle: PeerHandle, requestId: Int) {
+                    if (armed != generation || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+                    val publish = publishSession ?: return
+                    val waiting = pairing
+                    if (waiting != null) {
+                        waiting.acceptIncoming(publish, peerHandle, requestId)
+                    } else {
+                        guarded("rejectPairingRequest") { publish.rejectPairingRequest(requestId, peerHandle) }
+                    }
+                }
+
+                override fun onPairingSetupSucceeded(peerHandle: PeerHandle, alias: String) {
+                    if (armed != generation) return
+                    pairing?.pairingSucceeded(alias)
+                    requestPairedDataPath(peerHandle, alias)
+                }
+
+                override fun onPairingSetupFailed(peerHandle: PeerHandle) {
+                    if (armed == generation) pairing?.pairingFailed("the other phone's pairing did not complete")
+                }
+
+                override fun onPairingVerificationSucceed(peerHandle: PeerHandle, alias: String) {
+                    if (armed == generation) requestPairedDataPath(peerHandle, alias)
+                }
+
+                override fun onPairingVerificationFailed(peerHandle: PeerHandle) {
+                    if (armed == generation) {
+                        HyperBleLog.event("Wi-Fi Aware: a paired phone failed verification; pair them again", LogLevel.WARN)
+                    }
+                }
             }, handler)
         }
     }
@@ -256,6 +307,9 @@ internal class WifiAwareHostPath(
     private fun closeSession(reportLinks: Boolean) {
         generation += 1
         isReady = false
+        pairing?.hostIsPublishing = false
+        pairedNetworks.values.forEach { runCatching { connectivity.unregisterNetworkCallback(it) } }
+        pairedNetworks.clear()
         publishSession?.close()
         publishSession = null
         session?.close()
@@ -310,6 +364,54 @@ internal class WifiAwareHostPath(
             pending.networkCallback = null
             drop(link, report = true, reason = "the data path could not be requested")
         }
+    }
+
+    /**
+     * Paired scheme: a peer paired with or verified an earlier pairing, so it may be an iPhone
+     * that is about to connect. Its data path is requested right away; the TCP connection that
+     * follows finds its link by the token, like any other.
+     */
+    private fun requestPairedDataPath(peer: PeerHandle, alias: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || pairedNetworks.containsKey(peer)) return
+        val publish = publishSession ?: return
+        val port = server?.localPort ?: return
+        val builder = WifiAwareNetworkSpecifier.Builder(publish, peer)
+        val security = WifiAwareSupport.pairedSecurity()
+        if (security != null) {
+            builder.setDataPathSecurityConfig(security).setPort(port).setTransportProtocol(TCP_PROTOCOL)
+        }
+        val specifier = guarded("paired network specifier") { builder.build() } ?: return
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI_AWARE)
+            .setNetworkSpecifier(specifier)
+            .build()
+        val armed = generation
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                handler.post { if (armed == generation) HyperBleLog.event("Wi-Fi Aware: data path up with paired $alias") }
+            }
+
+            override fun onUnavailable() {
+                handler.post {
+                    if (armed == generation && pairedNetworks.remove(peer) != null) {
+                        HyperBleLog.event("Wi-Fi Aware: no data path with paired $alias", LogLevel.WARN)
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                handler.post {
+                    if (armed == generation && pairedNetworks.remove(peer) != null) {
+                        HyperBleLog.event("Wi-Fi Aware: data path with paired $alias lost")
+                    }
+                }
+            }
+        }
+        pairedNetworks[peer] = callback
+        HyperBleLog.event("Wi-Fi Aware: requesting a data path for paired $alias" + if (security == null) " (open)" else "")
+        guarded("requestNetwork") {
+            connectivity.requestNetwork(request, callback, handler, WifiAwareSupport.NETWORK_REQUEST_TIMEOUT_MILLIS)
+        } ?: pairedNetworks.remove(peer)
     }
 
     private fun startAcceptLoop(socket: ServerSocket, armed: Int) {

@@ -38,10 +38,11 @@ change. The protocol is specified in [`docs/wire-protocol.md`](../../docs/wire-p
     `records`, in order, and nothing more.
   - `invalidStream`: feeding `stream` must fail (the connection is closed).
   - `serviceInfo`, `discoveryHello`: the publish service-specific info and the discovery message.
-  - `gameInfoFlag`: adding the `aware` flag to the GameInfo JSON `in` gives `out`, byte for byte.
+  - `gameInfoFlag`: adding the `aware` flag (and `awarePaired` when `paired` is true) to the
+    GameInfo JSON `in` gives `out`, byte for byte.
   - `hasGameInfoFlag`: whether the GameInfo `json` announces Wi-Fi Aware.
-  - `takesAwareFrom`: whether a client on `platform` asks the host of GameInfo `json` for a data
-    path (flag set and same `hostPlatform`).
+  - `awareScheme`: how a client on `platform`, allowing `crossPlatform` or not, reaches the host
+    of GameInfo `json`: `"nan"`, `"paired"`, or `null` for not at all.
   - `serviceNames`: which Wi-Fi Aware service names a config accepts.
 
 The `view`, `action` and `gameState` objects in the vectors belong to a made-up counter game. The

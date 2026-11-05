@@ -7,6 +7,7 @@ import io.hypercode.hyperblekit.transport.aware.AwareClientPath
 import io.hypercode.hyperblekit.transport.aware.AwareHostEvent
 import io.hypercode.hyperblekit.transport.aware.AwareHostPath
 import io.hypercode.hyperblekit.transport.aware.AwareOffer
+import io.hypercode.hyperblekit.transport.aware.AwareScheme
 import io.hypercode.hyperblekit.transport.aware.MainScheduler
 
 /**
@@ -64,6 +65,7 @@ internal class FakeAwareHostPath(private val air: FakeAwareAir, override val max
         private set
 
     override var isSupported = true
+    override var acceptsPairedClients = false
     override val isReady: Boolean get() = isStarted && air.isAvailable
 
     override fun setListener(listener: ((AwareHostEvent) -> Unit)?) {
@@ -148,13 +150,21 @@ internal class FakeAwareClientPath(private val air: FakeAwareAir) : AwareClientP
     private var host: FakeAwareHostPath? = null
     private var attempt = 0
 
-    override var isSupported = true
+    /** The schemes this phone can use; both by default. */
+    var supportedSchemes = setOf(AwareScheme.NAN, AwareScheme.PAIRED)
+
+    /** The scheme of the last [connect]. */
+    var lastScheme: AwareScheme? = null
+        private set
+
+    override fun supports(scheme: AwareScheme) = scheme in supportedSchemes
 
     override fun setListener(listener: ((AwareClientEvent) -> Unit)?) {
         this.listener = listener
     }
 
-    override fun connect(offer: AwareOffer) {
+    override fun connect(offer: AwareOffer, scheme: AwareScheme) {
+        lastScheme = scheme
         close()
         val current = ++attempt
         air.radio.post(air.setupMillis) {

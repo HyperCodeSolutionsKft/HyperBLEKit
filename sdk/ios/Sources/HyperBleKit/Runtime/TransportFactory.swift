@@ -27,7 +27,8 @@ enum TransportFactory {
         #else
         let ble = BLEClientTransport(layout: config.layout)
         guard config.dataPaths == .preferWiFiAware else { return ble }
-        return HybridClientTransport(ble: ble, aware: makeAwareClientPath(config: config))
+        return HybridClientTransport(ble: ble, aware: makeAwareClientPath(config: config),
+                                     crossPlatform: config.experimentalCrossPlatformWiFiAware)
         #endif
     }
 

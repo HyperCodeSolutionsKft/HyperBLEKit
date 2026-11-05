@@ -50,6 +50,11 @@ public struct HyperBleKitConfig {
     /// same one, and the app must list it under `WiFiAwareServices` in its Info.plist. Only
     /// used with `.preferWiFiAware`.
     public let wifiAwareServiceName: String
+    /// **Experimental.** Also try Wi-Fi Aware with Android phones (that set the same option),
+    /// after pairing them with `WiFiAwarePairingButton`. Nobody has reported Wi-Fi Aware between
+    /// an iPhone and an Android phone working yet, so expect it to fall back to Bluetooth LE.
+    /// Only used with `.preferWiFiAware`.
+    public let experimentalCrossPlatformWiFiAware: Bool
 
     /// Creates a configuration. Only `games` is required; the other values have defaults.
     ///
@@ -69,6 +74,7 @@ public struct HyperBleKitConfig {
     ///   - logCapacity: at least 1 line.
     ///   - dataPaths: `.bleOnly` (the default) or `.preferWiFiAware`.
     ///   - wifiAwareServiceName: the Wi-Fi Aware service name, like `_hyperblekit._tcp`.
+    ///   - experimentalCrossPlatformWiFiAware: experimental; also try Wi-Fi Aware with Android phones.
     public init(games: [GameModule],
                 serviceUUID: UUID = HyperBleKitConfig.defaultServiceUUID,
                 localNamePrefix: String = HyperBleKitConfig.defaultLocalNamePrefix,
@@ -76,7 +82,8 @@ public struct HyperBleKitConfig {
                 maxPlayers: Int = HyperBleKitConfig.defaultMaxPlayers,
                 logCapacity: Int = HyperBleKitConfig.defaultLogCapacity,
                 dataPaths: DataPaths = .bleOnly,
-                wifiAwareServiceName: String = HyperBleKitConfig.defaultWiFiAwareServiceName) {
+                wifiAwareServiceName: String = HyperBleKitConfig.defaultWiFiAwareServiceName,
+                experimentalCrossPlatformWiFiAware: Bool = false) {
         precondition((2...ProtocolConstants.maxPlayers).contains(maxPlayers),
                      "HyperBleKitConfig.maxPlayers must be 2 to \(ProtocolConstants.maxPlayers), got \(maxPlayers)")
         precondition(logCapacity >= 1, "HyperBleKitConfig.logCapacity must be at least 1, got \(logCapacity)")
@@ -94,6 +101,7 @@ public struct HyperBleKitConfig {
         self.logCapacity = logCapacity
         self.dataPaths = dataPaths
         self.wifiAwareServiceName = wifiAwareServiceName
+        self.experimentalCrossPlatformWiFiAware = experimentalCrossPlatformWiFiAware
     }
 
     /// The BLE identifiers this configuration stands for.

@@ -26,15 +26,20 @@ internal object AwareWire {
     /** The GameInfo field an Aware-capable host adds: `"aware":1` (the value is [VERSION]). */
     const val GAME_INFO_FIELD = "aware"
 
+    /** The GameInfo field of a host that also takes clients by the paired (iPhone) scheme. */
+    const val GAME_INFO_PAIRED_FIELD = "awarePaired"
+
     /**
      * [info] (compact JSON, as the runtime encodes GameInfo) with `"aware":1` added as its last
-     * field. Clients without Wi-Fi Aware ignore it, as they ignore every unknown field.
+     * field, and `"awarePaired":1` after it if [paired]. Clients without Wi-Fi Aware ignore them,
+     * as they ignore every unknown field.
      */
-    fun withAwareFlag(info: ByteArray): ByteArray {
+    fun withAwareFlag(info: ByteArray, paired: Boolean = false): ByteArray {
         val text = String(info, Charsets.UTF_8)
         if (!text.endsWith("}")) return info
         val separator = if (text.dropLast(1).trimEnd().endsWith("{")) "" else ","
-        return (text.dropLast(1) + "$separator\"$GAME_INFO_FIELD\":$VERSION}").toByteArray(Charsets.UTF_8)
+        val pairedField = if (paired) ",\"$GAME_INFO_PAIRED_FIELD\":$VERSION" else ""
+        return (text.dropLast(1) + "$separator\"$GAME_INFO_FIELD\":$VERSION$pairedField}").toByteArray(Charsets.UTF_8)
     }
 
     /** Whether a host's GameInfo says it can take clients over Wi-Fi Aware (this [VERSION]). */
@@ -46,17 +51,25 @@ internal object AwareWire {
         }
 
     /**
-     * Whether a client on [platform] (`"android"` / `"ios"`) should ask this host for a data path:
-     * the GameInfo has the flag and the host runs on the same platform. Wi-Fi Aware between
-     * Android and iOS is not attempted: discovery works differently on the two.
+     * How a client on [platform] (`"android"` / `"ios"`) reaches this host over Wi-Fi Aware, or
+     * null if it should not ask: a host on the same platform by that platform's own scheme; a
+     * host on the other platform only by the paired scheme, only if the client allows
+     * [crossPlatform] and the host announces `"awarePaired":1`.
      */
-    fun takesAwareFrom(info: ByteArray, platform: String): Boolean =
-        hasAwareFlag(info) &&
-            try {
-                org.json.JSONObject(String(info, Charsets.UTF_8)).optString("hostPlatform") == platform
-            } catch (_: org.json.JSONException) {
-                false
-            }
+    fun schemeFor(info: ByteArray, platform: String, crossPlatform: Boolean): AwareScheme? {
+        val json = try {
+            org.json.JSONObject(String(info, Charsets.UTF_8))
+        } catch (_: org.json.JSONException) {
+            return null
+        }
+        if (json.optInt(GAME_INFO_FIELD, 0) != VERSION) return null
+        val hostPlatform = json.optString("hostPlatform")
+        return when {
+            hostPlatform == platform -> AwareScheme.native(platform)
+            crossPlatform && json.optInt(GAME_INFO_PAIRED_FIELD, 0) == VERSION -> AwareScheme.PAIRED
+            else -> null
+        }
+    }
 
     /** The `hostPlatform` value of this build in GameInfo. */
     const val THIS_PLATFORM = "android"
@@ -81,6 +94,21 @@ internal object AwareWire {
         } else {
             null
         }
+}
+
+/** How a client finds its host's data path (wire specification, "Wi-Fi Aware data path"). */
+internal enum class AwareScheme {
+    /** Android ↔ Android: instance ID, NAN discovery message, passphrase-secured data path. */
+    NAN,
+
+    /** With an iPhone: paired devices only, the host picked by the echo of the token. */
+    PAIRED,
+    ;
+
+    companion object {
+        /** The scheme two phones of [platform] use with each other. */
+        fun native(platform: String): AwareScheme = if (platform == "ios") PAIRED else NAN
+    }
 }
 
 /** Which path the messages of one direction of a link travel on. */

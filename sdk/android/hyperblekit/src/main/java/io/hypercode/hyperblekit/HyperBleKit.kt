@@ -84,7 +84,10 @@ public class HyperBleKit private constructor(
         wifiAwareAvailable: () -> Boolean = { false },
     ) : this(
         config,
-        Wiring(identity, hostTransport, scanner, clientTransportFactory, scope, publishDispatcher, elapsedMillis, wifiAwareAvailable),
+        Wiring(
+            identity, hostTransport, scanner, clientTransportFactory, scope, publishDispatcher, elapsedMillis,
+            wifiAwareAvailable, wifiAwarePairing = null,
+        ),
     )
 
     /** Everything a kit works with besides its configuration. */
@@ -102,6 +105,8 @@ public class HyperBleKit private constructor(
         val elapsedMillis: () -> Long,
         /** Whether Wi-Fi Aware can carry messages right now (see [isWifiAwareAvailable]). */
         val wifiAwareAvailable: () -> Boolean,
+        /** See [HyperBleKit.wifiAwarePairing]. */
+        val wifiAwarePairing: WifiAwarePairing?,
     )
 
     private val hostTransport = wiring.hostTransport
@@ -138,6 +143,14 @@ public class HyperBleKit private constructor(
      * False changes nothing for the game, which then runs over Bluetooth LE.
      */
     public val isWifiAwareAvailable: Boolean get() = wifiAwareAvailable()
+
+    /**
+     * **Experimental.** Pairs this phone with an iPhone for Wi-Fi Aware; see [WifiAwarePairing].
+     * Not null only with [DataPaths.PREFER_WIFI_AWARE] and
+     * [HyperBleKitConfig.experimentalCrossPlatformWifiAware] on Android 10 or later; whether the
+     * phone can pair at all is [WifiAwarePairing.isSupported].
+     */
+    public val wifiAwarePairing: WifiAwarePairing? = wiring.wifiAwarePairing
 
     /**
      * Whether discovery is running, and why not if it failed (for example Bluetooth is off).
@@ -353,16 +366,22 @@ public class HyperBleKit private constructor(
             val useAware = config.dataPaths == DataPaths.PREFER_WIFI_AWARE &&
                 Build.VERSION.SDK_INT >= WifiAwareSupport.MIN_SDK
             val scheduler = MainScheduler { delay, block -> WifiAwareSupport.mainHandler.postDelayed(block, delay) }
+            val crossPlatform = useAware && config.experimentalCrossPlatformWifiAware
+            val pairing = if (crossPlatform) WifiAwarePairing(appContext, config.wifiAwareServiceName) else null
             return Wiring(
                 identity = LocalIdentity(appContext),
                 hostTransport = if (useAware) {
-                    HybridHostTransport(hostTransport, awareHostPath(appContext, config), scheduler)
+                    HybridHostTransport(hostTransport, awareHostPath(appContext, config, pairing), scheduler)
                 } else {
                     hostTransport
                 },
                 scanner = BleGameScanner(appContext, uuids, config.localNamePrefix),
                 clientTransportFactory = if (useAware) {
-                    { HybridClientTransport(clientTransport(), awareClientPath(appContext, config), scheduler) }
+                    {
+                        HybridClientTransport(
+                            clientTransport(), awareClientPath(appContext, config), scheduler, crossPlatform = crossPlatform,
+                        )
+                    }
                 } else {
                     clientTransport
                 },
@@ -371,19 +390,20 @@ public class HyperBleKit private constructor(
                 publishDispatcher = Dispatchers.Main,
                 elapsedMillis = SystemClock::elapsedRealtime,
                 wifiAwareAvailable = { useAware && WifiAwareSupport.isAvailable(appContext) },
+                wifiAwarePairing = pairing,
             )
         }
 
-        private fun awareHostPath(appContext: Context, config: HyperBleKitConfig): AwareHostPath =
+        private fun awareHostPath(appContext: Context, config: HyperBleKitConfig, pairing: WifiAwarePairing?): AwareHostPath =
             if (Build.VERSION.SDK_INT >= WifiAwareSupport.MIN_SDK) {
-                WifiAwareHostPath(appContext, config.wifiAwareServiceName)
+                WifiAwareHostPath(appContext, config.wifiAwareServiceName, config.experimentalCrossPlatformWifiAware, pairing)
             } else {
                 UnsupportedAwareHostPath
             }
 
         private fun awareClientPath(appContext: Context, config: HyperBleKitConfig): AwareClientPath =
             if (Build.VERSION.SDK_INT >= WifiAwareSupport.MIN_SDK) {
-                WifiAwareClientPath(appContext, config.wifiAwareServiceName)
+                WifiAwareClientPath(appContext, config.wifiAwareServiceName, config.experimentalCrossPlatformWifiAware)
             } else {
                 UnsupportedAwareClientPath
             }

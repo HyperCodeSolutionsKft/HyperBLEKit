@@ -4,11 +4,17 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.wifi.aware.AwarePairingConfig
+import android.net.wifi.aware.Characteristics
+import android.net.wifi.aware.WifiAwareDataPathSecurityConfig
 import android.net.wifi.aware.WifiAwareManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
+import io.hypercode.hyperblekit.log.HyperBleLog
+import io.hypercode.hyperblekit.log.LogLevel
 import io.hypercode.hyperblekit.transport.FrameSendResult
 import io.hypercode.hyperblekit.transport.LinkId
 import java.security.SecureRandom
@@ -43,6 +49,53 @@ internal object WifiAwareSupport {
     @SuppressLint("MissingPermission") // ACCESS_WIFI_STATE is checked by isSupported first.
     fun isAvailable(context: Context): Boolean =
         isSupported(context) && manager(context)?.isAvailable == true
+
+    /**
+     * [isSupported], Android 14 or later, and a Wi-Fi chip that supports Wi-Fi Aware pairing (Wi-Fi
+     * Aware 4.0), which the paired (iPhone) scheme needs.
+     */
+    @SuppressLint("MissingPermission") // ACCESS_WIFI_STATE is checked by isSupported first.
+    fun isPairingSupported(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            isSupported(context) &&
+            manager(context)?.characteristics?.isAwarePairingSupported == true
+
+    /** A publication that a phone can pair with by typing the code this one shows, and verify later. */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    fun publisherPairingConfig(): AwarePairingConfig =
+        AwarePairingConfig.Builder()
+            .setPairingSetupEnabled(true)
+            .setPairingVerificationEnabled(true)
+            .setPairingCacheEnabled(true)
+            .setBootstrappingMethods(AwarePairingConfig.PAIRING_BOOTSTRAPPING_PIN_CODE_DISPLAY)
+            .build()
+
+    /** A subscription that pairs by typing the other phone's code, and verifies paired phones. */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    fun subscriberPairingConfig(): AwarePairingConfig =
+        AwarePairingConfig.Builder()
+            .setPairingSetupEnabled(true)
+            .setPairingVerificationEnabled(true)
+            .setPairingCacheEnabled(true)
+            .setBootstrappingMethods(AwarePairingConfig.PAIRING_BOOTSTRAPPING_PIN_CODE_KEYPAD)
+            .build()
+
+    /**
+     * The data-path security for a paired peer. Pairing itself uses PASN, but a data path only
+     * takes the NCS suites, and the public API documents neither which one a paired peer's data
+     * path uses nor a PMK for it. This asks for NCS-PK-128 without a PMK and relies on the
+     * framework taking the keys from the pairing — **the main unknown of the paired scheme on
+     * Android**. Null if the platform refuses it; the caller then tries an open path, which an
+     * iPhone refuses, but the log shows how far it got.
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    fun pairedSecurity(): WifiAwareDataPathSecurityConfig? =
+        try {
+            WifiAwareDataPathSecurityConfig.Builder(Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_PK_128).build()
+        } catch (e: IllegalArgumentException) {
+            HyperBleLog.event("Wi-Fi Aware: paired data-path security refused (${e.message}), trying an open one", LogLevel.WARN)
+            null
+        }
 
     fun manager(context: Context): WifiAwareManager? =
         context.getSystemService(Context.WIFI_AWARE_SERVICE) as? WifiAwareManager
@@ -85,6 +138,7 @@ internal object UnsupportedAwareHostPath : AwareHostPath {
     override val isSupported = false
     override val isReady = false
     override val maxDataPaths = 0
+    override val acceptsPairedClients = false
     override fun setListener(listener: ((AwareHostEvent) -> Unit)?) = Unit
     override fun start() = Unit
     override fun stop() = Unit
@@ -97,9 +151,9 @@ internal object UnsupportedAwareHostPath : AwareHostPath {
 
 /** The client path of a phone without Wi-Fi Aware: never asks for a data path. */
 internal object UnsupportedAwareClientPath : AwareClientPath {
-    override val isSupported = false
+    override fun supports(scheme: AwareScheme) = false
     override fun setListener(listener: ((AwareClientEvent) -> Unit)?) = Unit
-    override fun connect(offer: AwareOffer) = Unit
+    override fun connect(offer: AwareOffer, scheme: AwareScheme) = Unit
     override fun send(message: ByteArray) = false
     override fun sendFrame(payload: ByteArray) = FrameSendResult.FAILED
     override fun close() = Unit

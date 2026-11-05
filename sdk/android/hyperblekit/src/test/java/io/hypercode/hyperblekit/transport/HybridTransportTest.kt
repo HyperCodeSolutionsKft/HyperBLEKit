@@ -7,6 +7,7 @@ import io.hypercode.hyperblekit.transport.aware.AwareControl
 import io.hypercode.hyperblekit.transport.aware.AwareHostEvent
 import io.hypercode.hyperblekit.transport.aware.AwareHostPath
 import io.hypercode.hyperblekit.transport.aware.AwareOffer
+import io.hypercode.hyperblekit.transport.aware.AwareScheme
 import io.hypercode.hyperblekit.transport.aware.AwareWire
 import io.hypercode.hyperblekit.transport.aware.DataPath
 import io.hypercode.hyperblekit.transport.aware.DeclineReason
@@ -71,13 +72,15 @@ class HybridTransportTest {
         val sent = mutableListOf<ByteArray>()
         var flushThen: (() -> Unit)? = null
         var closes = 0
-        override val isSupported = true
+        var connectedScheme: AwareScheme? = null
+        override fun supports(scheme: AwareScheme) = true
         override fun setListener(listener: ((AwareClientEvent) -> Unit)?) {
             this.listener = listener
         }
         fun emit(event: AwareClientEvent) = listener?.invoke(event)
-        override fun connect(offer: AwareOffer) {
+        override fun connect(offer: AwareOffer, scheme: AwareScheme) {
             connectedTo = offer
+            connectedScheme = scheme
         }
         override fun send(message: ByteArray): Boolean {
             sent += message
@@ -130,6 +133,29 @@ class HybridTransportTest {
         ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         assertEquals(listOf(AwareControl.Hello()), ble.controls)
+    }
+
+    @Test
+    fun `a host on the other platform is asked only with the experimental option, by the paired scheme`() {
+        val iosHost = AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"ios\"}"), paired = true)
+        ble.emit(ClientTransportEvent.GameInfoRead(iosHost))
+        ble.emit(ClientTransportEvent.Ready(CHUNK))
+        assertTrue(ble.controls.isEmpty())
+
+        val crossBle = BleClient()
+        val crossAware = AwareClient()
+        HybridClientTransport(crossBle, crossAware, scheduler, crossPlatform = true)
+        crossBle.emit(ClientTransportEvent.GameInfoRead(iosHost))
+        crossBle.emit(ClientTransportEvent.Ready(CHUNK))
+        assertEquals(listOf(AwareControl.Hello()), crossBle.controls)
+        crossBle.emit(control(AwareControl.Offer(offer)))
+        assertEquals(AwareScheme.PAIRED, crossAware.connectedScheme)
+    }
+
+    @Test
+    fun `a host on the same platform is reached by the native scheme`() {
+        upgradedClient()
+        assertEquals(AwareScheme.NAN, aware.connectedScheme)
     }
 
     @Test
@@ -257,6 +283,7 @@ class HybridTransportTest {
         override var isSupported = true
         override var isReady = true
         override var maxDataPaths = 1
+        override var acceptsPairedClients = false
         val closed = mutableListOf<LinkId>()
         val sent = mutableListOf<Pair<LinkId, ByteArray>>()
         override fun setListener(listener: ((AwareHostEvent) -> Unit)?) {
@@ -286,6 +313,10 @@ class HybridTransportTest {
         val host = HybridHostTransport(bleHost, awareHost, scheduler)
         host.setGameInfo(bytes("{\"v\":1}"))
         assertTrue(AwareWire.hasAwareFlag(bleHost.lastGameInfo))
+        assertFalse(String(bleHost.lastGameInfo).contains("awarePaired"))
+        awareHost.acceptsPairedClients = true
+        host.setGameInfo(bytes("{\"v\":1}"))
+        assertTrue(String(bleHost.lastGameInfo).endsWith("\"aware\":1,\"awarePaired\":1}"))
         awareHost.isSupported = false
         host.setGameInfo(bytes("{\"v\":1}"))
         assertFalse(AwareWire.hasAwareFlag(bleHost.lastGameInfo))

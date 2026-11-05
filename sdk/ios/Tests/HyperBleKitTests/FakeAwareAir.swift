@@ -58,6 +58,7 @@ final class FakeAwareHostPath: AwareHostPath {
     private var paths: [LinkID: (token: Data, client: FakeAwareClientPath?)] = [:]
     private(set) var offers = 0
     var isSupported = true
+    var acceptsPairedClients = false
 
     fileprivate init(air: FakeAwareAir, maxDataPaths: Int) {
         self.air = air
@@ -144,7 +145,10 @@ final class FakeAwareClientPath: AwareClientPath {
     private let events = PassthroughSubject<AwareClientEvent, Never>()
     private var host: FakeAwareHostPath?
     private var attempt = 0
-    var isSupported = true
+    /// The schemes this phone can use; both by default.
+    var supportedSchemes: [AwareScheme] = [.nan, .paired]
+    /// The scheme of the last `connect`.
+    private(set) var lastScheme: AwareScheme?
 
     fileprivate init(air: FakeAwareAir) {
         self.air = air
@@ -152,7 +156,10 @@ final class FakeAwareClientPath: AwareClientPath {
 
     var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { events.eraseToAnyPublisher() }
 
-    func connect(_ offer: AwareOffer) {
+    func supports(_ scheme: AwareScheme) -> Bool { supportedSchemes.contains(scheme) }
+
+    func connect(_ offer: AwareOffer, scheme: AwareScheme) {
+        lastScheme = scheme
         close()
         attempt += 1
         let current = attempt

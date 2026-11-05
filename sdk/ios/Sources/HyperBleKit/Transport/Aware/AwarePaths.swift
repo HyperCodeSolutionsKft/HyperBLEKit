@@ -27,6 +27,8 @@ protocol AwareHostPath: AnyObject {
     var isReady: Bool { get }
     /// How many data paths can be up at once.
     var maxDataPaths: Int { get }
+    /// Also takes clients by the paired scheme; announced in GameInfo as `awarePaired`.
+    var acceptsPairedClients: Bool { get }
     func start()
     /// Stops publishing and drops every data path, without events.
     func stop()
@@ -52,9 +54,10 @@ enum AwareClientEvent {
 /// Client side: one data path to one host.
 protocol AwareClientPath: AnyObject {
     var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { get }
-    var isSupported: Bool { get }
-    /// Finds the host of `offer` and sets the data path up; ends in `.up` or `.down`.
-    func connect(_ offer: AwareOffer)
+    /// The hardware, the OS version, the build and the config allow this scheme.
+    func supports(_ scheme: AwareScheme) -> Bool
+    /// Finds the host of `offer` by `scheme` and sets the data path up; ends in `.up` or `.down`.
+    func connect(_ offer: AwareOffer, scheme: AwareScheme)
     func send(_ message: Data) -> Bool
     func sendFrame(_ payload: Data) -> FrameSendResult
     /// Drops the data path, without an event.
@@ -79,6 +82,7 @@ final class UnsupportedAwareHostPath: AwareHostPath {
     var isSupported: Bool { false }
     var isReady: Bool { false }
     var maxDataPaths: Int { 0 }
+    var acceptsPairedClients: Bool { false }
     func start() {}
     func stop() {}
     func stopAfterFlush() {}
@@ -91,8 +95,8 @@ final class UnsupportedAwareHostPath: AwareHostPath {
 /// The client path of a phone without Wi-Fi Aware: never asks for a data path.
 final class UnsupportedAwareClientPath: AwareClientPath {
     var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { Empty().eraseToAnyPublisher() }
-    var isSupported: Bool { false }
-    func connect(_ offer: AwareOffer) {}
+    func supports(_ scheme: AwareScheme) -> Bool { false }
+    func connect(_ offer: AwareOffer, scheme: AwareScheme) {}
     func send(_ message: Data) -> Bool { false }
     func sendFrame(_ payload: Data) -> FrameSendResult { .failed }
     func close() {}

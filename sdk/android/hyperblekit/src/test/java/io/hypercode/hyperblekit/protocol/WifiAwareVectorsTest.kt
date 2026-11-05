@@ -121,16 +121,19 @@ class WifiAwareVectorsTest {
     @Test
     fun `the GameInfo flag`() {
         for (case in vectors.cases("gameInfoFlag")) {
-            val out = AwareWire.withAwareFlag(case.getString("in").toByteArray(Charsets.UTF_8))
+            val out = AwareWire.withAwareFlag(case.getString("in").toByteArray(Charsets.UTF_8), paired = case.optBoolean("paired"))
             assertEquals(case.getString("name"), case.getString("out"), String(out, Charsets.UTF_8))
         }
         for (case in vectors.cases("hasGameInfoFlag")) {
             val has = AwareWire.hasAwareFlag(case.getString("json").toByteArray(Charsets.UTF_8))
             assertEquals(case.getString("name"), case.getBoolean("expected"), has)
         }
-        for (case in vectors.cases("takesAwareFrom")) {
-            val takes = AwareWire.takesAwareFrom(case.getString("json").toByteArray(Charsets.UTF_8), case.getString("platform"))
-            assertEquals(case.getString("name"), case.getBoolean("expected"), takes)
+        for (case in vectors.cases("awareScheme")) {
+            val scheme = AwareWire.schemeFor(
+                case.getString("json").toByteArray(Charsets.UTF_8), case.getString("platform"), case.getBoolean("crossPlatform"),
+            )
+            val expected = if (case.isNull("expected")) null else case.getString("expected")
+            assertEquals(case.getString("name"), expected, scheme?.name?.lowercase())
         }
     }
 

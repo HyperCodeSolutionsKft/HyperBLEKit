@@ -34,6 +34,9 @@ internal interface AwareHostPath {
     /** How many data paths the chip can hold at once. */
     val maxDataPaths: Int
 
+    /** Also takes clients by the paired (iPhone) scheme; announced in GameInfo as `awarePaired`. */
+    val acceptsPairedClients: Boolean
+
     fun setListener(listener: ((AwareHostEvent) -> Unit)?)
 
     /** Starts publishing; [isReady] once that worked. */
@@ -72,13 +75,13 @@ internal sealed interface AwareClientEvent {
 
 /** Client side: one data path to one host. */
 internal interface AwareClientPath {
-    /** The hardware, the OS version and the permissions allow Wi-Fi Aware at all. */
-    val isSupported: Boolean
+    /** The hardware, the OS version, the permissions and the config allow this scheme. */
+    fun supports(scheme: AwareScheme): Boolean
 
     fun setListener(listener: ((AwareClientEvent) -> Unit)?)
 
-    /** Finds the host of [offer] and sets the data path up; ends in [AwareClientEvent.Up] or `Down`. */
-    fun connect(offer: AwareOffer)
+    /** Finds the host of [offer] by [scheme] and sets the data path up; ends in [AwareClientEvent.Up] or `Down`. */
+    fun connect(offer: AwareOffer, scheme: AwareScheme)
 
     /** Queues a message. False if no data path is up. */
     fun send(message: ByteArray): Boolean

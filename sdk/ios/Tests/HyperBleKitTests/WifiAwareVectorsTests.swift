@@ -97,17 +97,19 @@ final class WifiAwareVectorsTests: XCTestCase {
 
     func testTheGameInfoFlag() {
         for vector in cases("gameInfoFlag") {
-            let out = AwareWire.withAwareFlag(Data((vector["in"] as! String).utf8))
+            let out = AwareWire.withAwareFlag(Data((vector["in"] as! String).utf8), paired: vector["paired"] as? Bool ?? false)
             XCTAssertEqual(String(data: out, encoding: .utf8), vector["out"] as? String, vector["name"] as! String)
         }
         for vector in cases("hasGameInfoFlag") {
             XCTAssertEqual(AwareWire.hasAwareFlag(Data((vector["json"] as! String).utf8)),
                            vector["expected"] as! Bool, vector["name"] as! String)
         }
-        XCTAssertFalse(cases("takesAwareFrom").isEmpty)
-        for vector in cases("takesAwareFrom") {
-            XCTAssertEqual(AwareWire.takesAware(from: Data((vector["json"] as! String).utf8), platform: vector["platform"] as! String),
-                           vector["expected"] as! Bool, vector["name"] as! String)
+        XCTAssertFalse(cases("awareScheme").isEmpty)
+        for vector in cases("awareScheme") {
+            let scheme = AwareWire.scheme(for: Data((vector["json"] as! String).utf8), platform: vector["platform"] as! String,
+                                          crossPlatform: vector["crossPlatform"] as! Bool)
+            let name: String? = scheme.map { $0 == .nan ? "nan" : "paired" }
+            XCTAssertEqual(name, vector["expected"] as? String, vector["name"] as! String)
         }
     }
 

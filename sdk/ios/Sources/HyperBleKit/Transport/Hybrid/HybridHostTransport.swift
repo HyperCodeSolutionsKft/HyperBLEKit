@@ -73,7 +73,7 @@ final class HybridHostTransport: GameHostTransport {
 
     /// A host that can take clients over Wi-Fi Aware says so in its GameInfo.
     func setGameInfo(_ info: Data) {
-        ble.setGameInfo(aware.isSupported ? AwareWire.withAwareFlag(info) : info)
+        ble.setGameInfo(aware.isSupported ? AwareWire.withAwareFlag(info, paired: aware.acceptsPairedClients) : info)
     }
 
     @discardableResult

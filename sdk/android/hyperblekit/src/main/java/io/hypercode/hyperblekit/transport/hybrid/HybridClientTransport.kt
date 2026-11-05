@@ -10,6 +10,7 @@ import io.hypercode.hyperblekit.transport.RealtimeFrames
 import io.hypercode.hyperblekit.transport.aware.AwareClientEvent
 import io.hypercode.hyperblekit.transport.aware.AwareClientPath
 import io.hypercode.hyperblekit.transport.aware.AwareControl
+import io.hypercode.hyperblekit.transport.aware.AwareScheme
 import io.hypercode.hyperblekit.transport.aware.AwareWire
 import io.hypercode.hyperblekit.transport.aware.DataPath
 import io.hypercode.hyperblekit.transport.aware.MainScheduler
@@ -30,14 +31,17 @@ internal class HybridClientTransport(
     private val ble: GameClientTransport,
     private val aware: AwareClientPath,
     private val scheduler: MainScheduler,
-    /** Only a host on this platform is asked for a data path; see [AwareWire.takesAwareFrom]. */
+    /** This phone's platform; see [AwareWire.schemeFor]. */
     private val platform: String = AwareWire.THIS_PLATFORM,
+    /** A host on the other platform may be asked too (experimental); see [AwareWire.schemeFor]. */
+    private val crossPlatform: Boolean = false,
 ) : GameClientTransport {
 
     private enum class AwareState { NONE, ASKED, CONNECTING, UP }
 
     private var listener: ((ClientTransportEvent) -> Unit)? = null
-    private var hostTakesAware = false
+    /** How the host of the current connection can be reached over Wi-Fi Aware; null: not at all. */
+    private var hostScheme: AwareScheme? = null
     private var awareState = AwareState.NONE
     private var maxChunkLength = 0
     private var helloAttempts = 0
@@ -127,7 +131,7 @@ internal class HybridClientTransport(
         isClosing = false
         if (awareState == AwareState.CONNECTING || awareState == AwareState.UP) aware.close()
         awareState = AwareState.NONE
-        hostTakesAware = false
+        hostScheme = null
         helloAttempts = 0
         gate.reset()
     }
@@ -141,13 +145,14 @@ internal class HybridClientTransport(
     private fun bleEvent(event: ClientTransportEvent) {
         when (event) {
             is ClientTransportEvent.GameInfoRead -> {
-                hostTakesAware = AwareWire.takesAwareFrom(event.bytes, platform)
+                hostScheme = AwareWire.schemeFor(event.bytes, platform, crossPlatform)
                 listener?.invoke(event)
             }
             is ClientTransportEvent.Ready -> {
                 maxChunkLength = event.maxChunkLength
                 listener?.invoke(event)
-                if (hostTakesAware && aware.isSupported && awareState == AwareState.NONE) sayHello()
+                val scheme = hostScheme
+                if (scheme != null && aware.supports(scheme) && awareState == AwareState.NONE) sayHello()
             }
             is ClientTransportEvent.MessageReceived ->
                 if (AwareWire.isControl(event.bytes)) control(event.bytes) else listener?.invoke(event)
@@ -172,8 +177,9 @@ internal class HybridClientTransport(
             is AwareControl.Offer -> {
                 if (awareState != AwareState.ASKED) return
                 awareState = AwareState.CONNECTING
-                HyperBleLog.event("PATH host offers Wi-Fi Aware, connecting")
-                aware.connect(control.offer)
+                val scheme = hostScheme ?: return
+                HyperBleLog.event("PATH host offers Wi-Fi Aware, connecting (${scheme.name.lowercase()})")
+                aware.connect(control.offer, scheme)
             }
             is AwareControl.Decline -> {
                 if (awareState != AwareState.ASKED) return

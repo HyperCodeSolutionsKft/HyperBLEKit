@@ -41,6 +41,11 @@ import java.util.UUID
  *   first or last), then `._tcp`. Every phone in a game
  *   must use the same one; on iOS it must also be listed under `WiFiAwareServices` in the app's
  *   Info.plist. Only used with [DataPaths.PREFER_WIFI_AWARE].
+ * @param experimentalCrossPlatformWifiAware **Experimental.** Also try Wi-Fi Aware with iPhones
+ *   (that set the same option), after pairing them through [HyperBleKit.wifiAwarePairing]. Needs
+ *   Android 14 and a phone whose Wi-Fi chip supports Wi-Fi Aware pairing; nobody has reported it
+ *   working with an iPhone yet, so expect it to fall back to Bluetooth LE. Only used with
+ *   [DataPaths.PREFER_WIFI_AWARE].
  * @throws IllegalArgumentException if a value is outside its range.
  */
 public class HyperBleKitConfig(
@@ -59,6 +64,8 @@ public class HyperBleKitConfig(
     public val dataPaths: DataPaths = DataPaths.BLE_ONLY,
     /** The Wi-Fi Aware service name, like `_hyperblekit._tcp`; see the constructor parameter. */
     public val wifiAwareServiceName: String = DEFAULT_WIFI_AWARE_SERVICE_NAME,
+    /** **Experimental.** Also try Wi-Fi Aware with iPhones; see the constructor parameter. */
+    public val experimentalCrossPlatformWifiAware: Boolean = false,
 ) {
     /** The games this app can play, in the order given to the constructor. */
     public val games: List<GameModule> = games.toList()

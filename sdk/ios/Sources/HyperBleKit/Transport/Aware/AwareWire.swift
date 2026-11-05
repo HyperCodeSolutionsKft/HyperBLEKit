@@ -20,13 +20,16 @@ enum AwareWire {
     /// The `hostPlatform` value of this build in GameInfo.
     static let thisPlatform = "ios"
 
-    /// Whether a client on `platform` ("android" / "ios") should ask this host for a data path:
-    /// the GameInfo has the flag and the host runs on the same platform. Wi-Fi Aware between
-    /// Android and iOS is not attempted: discovery works differently on the two.
-    static func takesAware(from info: Data, platform: String) -> Bool {
+    /// How a client on `platform` ("android" / "ios") reaches this host over Wi-Fi Aware, or
+    /// nil if it should not ask: a host on the same platform by that platform's own scheme; a
+    /// host on the other platform only by the paired scheme, only if the client allows
+    /// `crossPlatform` and the host announces `"awarePaired":1`.
+    static func scheme(for info: Data, platform: String, crossPlatform: Bool) -> AwareScheme? {
         guard hasAwareFlag(info),
-              let object = try? JSONSerialization.jsonObject(with: info) as? [String: Any] else { return false }
-        return object["hostPlatform"] as? String == platform
+              let object = try? JSONSerialization.jsonObject(with: info) as? [String: Any] else { return nil }
+        if object["hostPlatform"] as? String == platform { return .native(for: platform) }
+        if crossPlatform, (object[gameInfoPairedField] as? NSNumber)?.intValue == Int(version) { return .paired }
+        return nil
     }
 
     /// Whether a message received over BLE is a transport-control message, not a protocol one.
@@ -34,14 +37,19 @@ enum AwareWire {
         message.first == controlMarker
     }
 
+    /// The GameInfo field of a host that also takes clients by the paired (iPhone) scheme.
+    static let gameInfoPairedField = "awarePaired"
+
     /// `info` (compact JSON, as the runtime encodes GameInfo) with `"aware":1` added as its
-    /// last field. Clients without Wi-Fi Aware ignore it, as they ignore every unknown field.
-    static func withAwareFlag(_ info: Data) -> Data {
+    /// last field, and `"awarePaired":1` after it if `paired`. Clients without Wi-Fi Aware
+    /// ignore them, as they ignore every unknown field.
+    static func withAwareFlag(_ info: Data, paired: Bool = false) -> Data {
         guard let text = String(data: info, encoding: .utf8), text.hasSuffix("}") else { return info }
         var body = String(text.dropLast())
         let separator = body.trimmingCharacters(in: .whitespaces).hasSuffix("{") ? "" : ","
-        body += "\(separator)\"\(gameInfoField)\":\(version)}"
-        return Data(body.utf8)
+        body += "\(separator)\"\(gameInfoField)\":\(version)"
+        if paired { body += ",\"\(gameInfoPairedField)\":\(version)" }
+        return Data((body + "}").utf8)
     }
 
     /// Whether a host's GameInfo says it takes clients over Wi-Fi Aware (this `version`).
@@ -74,6 +82,17 @@ enum AwareWire {
         guard bytes.count == 2 + idLength, bytes[0] == discoveryHelloMarker, bytes[1] == version else { return nil }
         return bytes.subdata(in: 2..<bytes.count)
     }
+}
+
+/// How a client finds its host's data path (wire specification, "Wi-Fi Aware data path").
+enum AwareScheme: Equatable {
+    /// Android ↔ Android: instance ID, NAN discovery message, passphrase-secured data path.
+    case nan
+    /// With an iPhone: paired devices only, the host picked by the echo of the token.
+    case paired
+
+    /// The scheme two phones of `platform` use with each other.
+    static func native(for platform: String) -> AwareScheme { platform == "ios" ? .paired : .nan }
 }
 
 /// Which path the messages of one direction of a link travel on.

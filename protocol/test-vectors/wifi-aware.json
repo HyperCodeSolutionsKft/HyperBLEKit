@@ -616,6 +616,12 @@
       "name": "after_a_nested_empty_object",
       "in": "{\"v\":1,\"x\":{}}",
       "out": "{\"v\":1,\"x\":{},\"aware\":1}"
+    },
+    {
+      "name": "with_the_paired_flag",
+      "in": "{\"v\":1}",
+      "paired": true,
+      "out": "{\"v\":1,\"aware\":1,\"awarePaired\":1}"
     }
   ],
   "hasGameInfoFlag": [
@@ -637,32 +643,6 @@
     {
       "name": "not_json",
       "json": "hello",
-      "expected": false
-    }
-  ],
-  "takesAwareFrom": [
-    {
-      "name": "same_platform",
-      "json": "{\"v\":1,\"hostPlatform\":\"android\",\"aware\":1}",
-      "platform": "android",
-      "expected": true
-    },
-    {
-      "name": "ios_host_ios_client",
-      "json": "{\"v\":1,\"hostPlatform\":\"ios\",\"aware\":1}",
-      "platform": "ios",
-      "expected": true
-    },
-    {
-      "name": "other_platform",
-      "json": "{\"v\":1,\"hostPlatform\":\"ios\",\"aware\":1}",
-      "platform": "android",
-      "expected": false
-    },
-    {
-      "name": "no_flag",
-      "json": "{\"v\":1,\"hostPlatform\":\"android\"}",
-      "platform": "android",
       "expected": false
     }
   ],
@@ -714,6 +694,71 @@
     {
       "name": "_._tcp",
       "valid": false
+    }
+  ],
+  "awareScheme": [
+    {
+      "name": "android_to_android_is_nan",
+      "json": "{\"hostPlatform\":\"android\",\"aware\":1}",
+      "platform": "android",
+      "crossPlatform": false,
+      "expected": "nan"
+    },
+    {
+      "name": "ios_to_ios_is_paired",
+      "json": "{\"hostPlatform\":\"ios\",\"aware\":1,\"awarePaired\":1}",
+      "platform": "ios",
+      "crossPlatform": false,
+      "expected": "paired"
+    },
+    {
+      "name": "same_platform_ignores_the_cross_platform_setting",
+      "json": "{\"hostPlatform\":\"android\",\"aware\":1,\"awarePaired\":1}",
+      "platform": "android",
+      "crossPlatform": true,
+      "expected": "nan"
+    },
+    {
+      "name": "android_client_ios_host_needs_the_flag",
+      "json": "{\"hostPlatform\":\"ios\",\"aware\":1,\"awarePaired\":1}",
+      "platform": "android",
+      "crossPlatform": false,
+      "expected": null
+    },
+    {
+      "name": "android_client_ios_host_with_the_flag",
+      "json": "{\"hostPlatform\":\"ios\",\"aware\":1,\"awarePaired\":1}",
+      "platform": "android",
+      "crossPlatform": true,
+      "expected": "paired"
+    },
+    {
+      "name": "ios_client_android_host_without_paired_support",
+      "json": "{\"hostPlatform\":\"android\",\"aware\":1}",
+      "platform": "ios",
+      "crossPlatform": true,
+      "expected": null
+    },
+    {
+      "name": "ios_client_android_host_with_paired_support",
+      "json": "{\"hostPlatform\":\"android\",\"aware\":1,\"awarePaired\":1}",
+      "platform": "ios",
+      "crossPlatform": true,
+      "expected": "paired"
+    },
+    {
+      "name": "no_aware_flag",
+      "json": "{\"hostPlatform\":\"ios\",\"awarePaired\":1}",
+      "platform": "android",
+      "crossPlatform": true,
+      "expected": null
+    },
+    {
+      "name": "not_json",
+      "json": "hello",
+      "platform": "android",
+      "crossPlatform": true,
+      "expected": null
     }
   ]
 }

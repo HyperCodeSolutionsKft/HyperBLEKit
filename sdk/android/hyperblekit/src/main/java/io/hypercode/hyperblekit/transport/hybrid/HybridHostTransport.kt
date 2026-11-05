@@ -83,7 +83,7 @@ internal class HybridHostTransport(
 
     /** A host that can take clients over Wi-Fi Aware says so in its GameInfo. */
     override fun setGameInfo(info: ByteArray) {
-        ble.setGameInfo(if (aware.isSupported) AwareWire.withAwareFlag(info) else info)
+        ble.setGameInfo(if (aware.isSupported) AwareWire.withAwareFlag(info, paired = aware.acceptsPairedClients) else info)
     }
 
     override fun send(message: ByteArray, to: LinkId): Int {
