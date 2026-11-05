@@ -643,7 +643,7 @@ Optional, and off unless an app opts in (`DataPaths.PREFER_WIFI_AWARE` / `.prefe
 
 ### Capability in GameInfo
 
-A host that can publish over Wi-Fi Aware adds `"aware":1` as the last field of its `GameInfo`. Clients without Wi-Fi Aware ignore it (*JSON rules*: unknown fields are ignored). A client asks for a data path only when the field is present and equal to 1.
+A host that can publish over Wi-Fi Aware adds `"aware":1` as the last field of its `GameInfo`. Clients without Wi-Fi Aware ignore it (*JSON rules*: unknown fields are ignored). A client asks for a data path only when the field is present and equal to 1 **and** `hostPlatform` is its own platform: Android and iOS find Wi-Fi Aware peers in incompatible ways (below), so an Android phone and an iPhone stay on BLE with each other.
 
 ### Transport-control messages
 
@@ -687,9 +687,18 @@ Host                                          Client
  PATH_SWITCH(1) ── BLE ──▶                     PATH_SWITCH(1) ── BLE ──▶
 ```
 
-The token ties the TCP connection to the BLE link the offer went over. A connection whose first record is not a `HELLO` with a token the host offered is closed. The client gives up after 20 s without a connection, sends `FAILED`, and stays on BLE.
+The token ties the TCP connection to the BLE link the offer went over. A connection whose first record is not a `HELLO` with a token the host offered is closed. Once the host has tied the connection to its link, it answers with a `HELLO` record carrying the same token; a client that has not seen it within 3 s gives that connection up. The client gives up after 20 s without a connection, sends `FAILED`, and stays on BLE.
 
 The data path is encrypted at the Wi-Fi layer with the offer's passphrase. The passphrase itself travels over BLE, which is not encrypted: this protects against someone who only listens to Wi-Fi, not against someone who also records the BLE traffic.
+
+### Between two iPhones
+
+Apple's `WiFiAware` framework (iOS 26) has no service-specific info and no discovery messages, and an iPhone connects only to devices it has **paired** with (once, through the system's pairing sheet). The control messages and the record stream are the same; only how the client finds its host differs:
+
+- The host listens on the service for all paired devices; it does not publish an instance ID.
+- The client browses the service among its paired devices, connects to each one it has not tried yet, sends `HELLO(token)`, and keeps the first connection that answers with the same `HELLO`. A host that does not know the token closes the connection.
+- `instanceId` and `passphrase` in the `OFFER` are filled but not used: pairing secures the data path.
+- Unpaired iPhones never get a connection: the client gives up after 20 s, sends `FAILED`, and stays on BLE.
 
 ### The record stream
 
@@ -701,7 +710,7 @@ The TCP connection carries records:
 
 | Kind | Name | Body |
 |------|------|------|
-| `0x01` | `HELLO` | the token (client → host, first record only) |
+| `0x01` | `HELLO` | the token: client → host as the first record; host → client as the answer once bound |
 | `0x02` | `MESSAGE` | one whole message, unchunked |
 | `0x03` | `FRAME` | one real-time frame payload, without `frameSeq` (TCP neither reorders nor duplicates) |
 | `0x04` | `KEEPALIVE` | empty |

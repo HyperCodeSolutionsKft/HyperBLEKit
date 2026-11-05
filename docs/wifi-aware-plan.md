@@ -1,6 +1,6 @@
 # Wi-Fi Aware: feature plan
 
-Status: phases 1 and 2 implemented on branch `feature/wifi-aware`, not yet tested on real phones. See "Implementation status" at the end.
+Status: phases 1 to 3 implemented on branch `feature/wifi-aware`; phase 3 not yet built with Xcode 26, nothing tested on real phones. See "Implementation status" at the end.
 
 ## Goal
 
@@ -218,5 +218,30 @@ Where the implementation differs from the design above, and why:
 5. **No per-link path in `SessionDiagnostics` yet.** The log lines (`PATH …`) are the diagnostics
    for the first round of testing on real phones.
 
-Next: phase 3 (iOS `WiFiAware` + `DeviceDiscoveryUI` pairing; needs the iOS 26 SDK and Xcode 26),
-then real-device testing of phases 2 and 3.
+### Phase 3 (iOS), 2026-11-05
+
+- `WiFiAwareHostPath` / `WiFiAwareClientPath` on the iOS 26 Network framework
+  (`NetworkListener` / `NetworkBrowser` / `NetworkConnection` over TCP, `.allPairedDevices`),
+  `WiFiAwarePairingButton` (`DevicePairingView` / `DevicePicker`), `isWiFiAwareAvailable`.
+- The record stream on iOS is `AwareStreamConnection` over a small `AwareByteChannel` protocol:
+  platform-neutral and unit-tested; only the Network framework glue is iOS 26 code.
+- **Not compiled against the real SDK.** This Mac has Xcode 16.3 (iOS 18.4 SDK), so the iOS 26
+  files are behind `#if canImport(WiFiAware)` and were only syntax-checked and type-checked against
+  stubs written from Apple's documented signatures. Expect small fixes on the first Xcode 26 build;
+  the likeliest spots are `NetworkListener.State` case names, `receive(exactly:).content`, the
+  `WASubscriberBrowser.Endpoint` type, and `Sendable` diagnostics in the `run` closures.
+
+How the iPhone design differs from Android, from Apple's documentation:
+
+1. **No instance ID or NAN discovery message**: the framework offers neither. The client tries
+   every paired device that publishes the service and keeps the one that echoes its token. The
+   host's `HELLO` echo was added to the stream for this (Android sends it too; Android clients
+   ignore it).
+2. **Pairing replaces the passphrase**: the offer still carries one, unused between iPhones.
+3. **Same platform only**: a client asks only a host on its own platform (`hostPlatform` in
+   GameInfo), so Android ↔ iPhone stays on BLE and no data path slot is wasted on it.
+4. **Service names** follow Apple's rules (an invalid Info.plist entry crashes the app) on both
+   platforms.
+
+Next: build with Xcode 26 and fix what the real SDK reports, then real-device testing of phases
+2 and 3.

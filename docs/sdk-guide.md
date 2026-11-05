@@ -1185,9 +1185,9 @@ says what each link does: `PATH … offering Wi-Fi Aware`, `PATH up over Wi-Fi A
 
 | Platform | Status |
 |----------|--------|
-| Android | Implemented, Android 10 (API 29) and later, on phones that report `android.hardware.wifi.aware`. **Not yet tested on real phones.** |
-| iOS | The negotiation is implemented, but this build has no Wi-Fi Aware data path yet: an iPhone plays over Bluetooth LE with every phone. The data path (the `WiFiAware` framework, iOS 26) comes in a later version and needs a one-time pairing per pair of devices, through the system's pairing sheet. |
-| Android ↔ iPhone | Over Bluetooth LE. Wi-Fi Aware between Android and iOS is not attempted yet. |
+| Android ↔ Android | Implemented, Android 10 (API 29) and later, on phones that report `android.hardware.wifi.aware`. **Not yet tested on real phones.** |
+| iPhone ↔ iPhone | Implemented for iOS 26 on iPhone 12 and later, after a one-time pairing of the two iPhones. Needs the app built with Xcode 26 (iOS 26 SDK); built with an older Xcode, an iPhone plays over Bluetooth LE. **Not yet built with Xcode 26 nor tested on real phones.** |
+| Android ↔ iPhone | Over Bluetooth LE. The two platforms find Wi-Fi Aware peers in incompatible ways. |
 
 ### Android setup
 
@@ -1212,6 +1212,54 @@ Declare in the manifest, next to the Bluetooth permissions:
 running version: `NEARBY_WIFI_DEVICES` on Android 13 and later, `ACCESS_FINE_LOCATION` on
 Android 10 to 12. If the user refuses them, the kit works over Bluetooth LE only. On Android 10
 to 12, location services must also be switched on for Wi-Fi Aware.
+
+### iOS setup
+
+1. **Entitlement.** Add the Wi-Fi Aware capability, which puts this in the app's entitlements:
+
+   ```xml
+   <key>com.apple.developer.wifi-aware</key>
+   <array>
+       <string>Publish</string>
+       <string>Subscribe</string>
+   </array>
+   ```
+
+2. **Info.plist.** Declare the service (`wifiAwareServiceName`, default `_hyperblekit._tcp`) as
+   publishable and subscribable. A wrong or missing entry here makes iOS stop the app when the
+   service is used, so keep the name identical to the config's:
+
+   ```xml
+   <key>WiFiAwareServices</key>
+   <dict>
+       <key>_hyperblekit._tcp</key>
+       <dict>
+           <key>Publishable</key>
+           <dict/>
+           <key>Subscribable</key>
+           <dict/>
+       </dict>
+   </dict>
+   ```
+
+3. **Pairing.** Two iPhones use Wi-Fi Aware with each other only once they are paired; the
+   system keeps the pairing, so it is done once per pair of devices. Put
+   `WiFiAwarePairingButton` on a settings or lobby screen, on one phone with `.waitForPairing`,
+   on the other with `.pairWithNearbyPhone`:
+
+   ```swift
+   if #available(iOS 26.0, *) {
+       WiFiAwarePairingButton(config: config, role: .waitForPairing)
+       WiFiAwarePairingButton(config: config, role: .pairWithNearbyPhone)
+   }
+   ```
+
+   Which phone hosts a game later does not matter. Without a pairing the game simply runs over
+   Bluetooth LE.
+
+`HyperBleKit.isWiFiAwareAvailable` is true when the iPhone, the iOS version, the build and the
+Info.plist allow Wi-Fi Aware; it does not say whether a paired iPhone is near. Wi-Fi Aware does
+not run in the simulator.
 
 ### Limits
 

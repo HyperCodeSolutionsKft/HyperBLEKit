@@ -10,7 +10,10 @@ public enum DataPaths: Equatable {
     /// messages move to Wi-Fi Aware, and back to Bluetooth LE if that link breaks. Games behave
     /// the same either way. Phones without Wi-Fi Aware play in the same game over Bluetooth LE.
     ///
-    /// On iOS this build does not carry data over Wi-Fi Aware yet: an iPhone plays over
-    /// Bluetooth LE with every phone, Android phones with Wi-Fi Aware included.
+    /// On iOS it needs iOS 26 and an iPhone 12 or later, the app built with the iOS 26 SDK, the
+    /// `com.apple.developer.wifi-aware` entitlement, the service in Info.plist
+    /// (`WiFiAwareServices`), and a one-time pairing of the two iPhones
+    /// (`WiFiAwarePairingButton`). Wi-Fi Aware is used between two iPhones or two Android
+    /// phones; an iPhone and an Android phone play over Bluetooth LE.
     case preferWiFiAware
 }

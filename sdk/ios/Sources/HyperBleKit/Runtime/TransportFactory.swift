@@ -31,14 +31,36 @@ enum TransportFactory {
         #endif
     }
 
-    /// The Wi-Fi Aware data path of this platform. iOS gets its own in a later phase (the
-    /// `WiFiAware` framework, iOS 26); until then an iPhone never asks for or offers one, and
-    /// the hybrid transports behave exactly like the BLE ones.
+    /// The Wi-Fi Aware data path: the `WiFiAware` framework on iOS 26 and later (built with the
+    /// iOS 26 SDK), on an iPhone that supports it with the service in Info.plist. Anywhere else
+    /// an iPhone never asks for or offers one, and the hybrid transports behave exactly like the
+    /// BLE ones.
     static func makeAwareHostPath(config: HyperBleKitConfig) -> AwareHostPath {
-        UnsupportedAwareHostPath()
+        #if canImport(WiFiAware) && os(iOS)
+        if #available(iOS 26.0, *), WiFiAwareSupport.isSupported(serviceName: config.wifiAwareServiceName) {
+            return WiFiAwareHostPath(serviceName: config.wifiAwareServiceName)
+        }
+        #endif
+        return UnsupportedAwareHostPath()
     }
 
     static func makeAwareClientPath(config: HyperBleKitConfig) -> AwareClientPath {
-        UnsupportedAwareClientPath()
+        #if canImport(WiFiAware) && os(iOS)
+        if #available(iOS 26.0, *), WiFiAwareSupport.isSupported(serviceName: config.wifiAwareServiceName) {
+            return WiFiAwareClientPath(serviceName: config.wifiAwareServiceName)
+        }
+        #endif
+        return UnsupportedAwareClientPath()
+    }
+
+    /// Whether this iPhone can carry data over Wi-Fi Aware with this config.
+    static func isWiFiAwareSupported(config: HyperBleKitConfig) -> Bool {
+        guard config.dataPaths == .preferWiFiAware else { return false }
+        #if canImport(WiFiAware) && os(iOS) && !targetEnvironment(simulator)
+        if #available(iOS 26.0, *) {
+            return WiFiAwareSupport.isSupported(serviceName: config.wifiAwareServiceName)
+        }
+        #endif
+        return false
     }
 }
