@@ -17,6 +17,8 @@ import io.hypercode.hyperblekit.transport.GameHostTransport
 import io.hypercode.hyperblekit.transport.GameScanner
 import io.hypercode.hyperblekit.transport.HostTransportEvent
 import io.hypercode.hyperblekit.transport.LinkId
+import io.hypercode.hyperblekit.transport.hybrid.HybridClientTransport
+import io.hypercode.hyperblekit.transport.hybrid.HybridHostTransport
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -107,7 +109,13 @@ internal class FakeRadio(
 }
 
 /** One phone: its kit over fake transports, with its own identity and coroutine scope. */
-internal class FakeDevice(val radio: FakeRadio, name: String, config: HyperBleKitConfig) {
+internal class FakeDevice(
+    val radio: FakeRadio,
+    name: String,
+    config: HyperBleKitConfig,
+    /** Set: the kit runs over the hybrid transports, with Wi-Fi Aware from this air. */
+    val aware: FakeAwareAir? = null,
+) {
     val address = "AA:${radio.devices.size + 1}"
     val scope = CoroutineScope(SupervisorJob() + radio.kitDispatcher)
     val host = FakeHostTransport(this)
@@ -128,10 +136,25 @@ internal class FakeDevice(val radio: FakeRadio, name: String, config: HyperBleKi
         }
     ).also { it.storedPlayerName = name }
 
+    /** This phone's Wi-Fi Aware host path, when it has [aware]. */
+    val awareHost: FakeAwareHostPath? = aware?.hostPath()
+
+    /** Every Wi-Fi Aware client path made for this phone, oldest first. */
+    val awareClients = mutableListOf<FakeAwareClientPath>()
+
     val kit = HyperBleKit(
-        config, identity, host, scanner,
-        clientTransportFactory = { FakeClientTransport(this).also { clients += it } },
-        scope, publishDispatcher = radio.dispatcher, elapsedMillis = { radio.nowMillis },
+        config, identity,
+        hostTransport = if (aware != null) HybridHostTransport(host, checkNotNull(awareHost), aware.scheduler) else host,
+        scanner = scanner,
+        clientTransportFactory = {
+            val ble = FakeClientTransport(this).also { clients += it }
+            if (aware != null) {
+                HybridClientTransport(ble, aware.clientPath().also { awareClients += it }, aware.scheduler)
+            } else {
+                ble
+            }
+        },
+        scope = scope, publishDispatcher = radio.dispatcher, elapsedMillis = { radio.nowMillis },
     )
 
     init {

@@ -1,0 +1,638 @@
+{
+  "description": "Wi-Fi Aware vectors shared by the Android and iOS libraries. See the wire specification, 'Wi-Fi Aware data path'. All byte values are 0-255.",
+  "control": [
+    {
+      "name": "hello",
+      "control": {
+        "type": "hello",
+        "version": 1
+      },
+      "bytes": [
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "name": "offer",
+      "control": {
+        "type": "offer",
+        "instanceId": [
+          17,
+          34,
+          51,
+          68,
+          85,
+          102,
+          119,
+          136
+        ],
+        "token": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "passphrase": "Ab3dEf7hJk9mNp2qRs4tUv6wXy8zAb3d"
+      },
+      "bytes": [
+        0,
+        2,
+        1,
+        17,
+        34,
+        51,
+        68,
+        85,
+        102,
+        119,
+        136,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        32,
+        65,
+        98,
+        51,
+        100,
+        69,
+        102,
+        55,
+        104,
+        74,
+        107,
+        57,
+        109,
+        78,
+        112,
+        50,
+        113,
+        82,
+        115,
+        52,
+        116,
+        85,
+        118,
+        54,
+        119,
+        88,
+        121,
+        56,
+        122,
+        65,
+        98,
+        51,
+        100
+      ]
+    },
+    {
+      "name": "decline_unavailable",
+      "control": {
+        "type": "decline",
+        "reason": 1
+      },
+      "bytes": [
+        0,
+        3,
+        1
+      ]
+    },
+    {
+      "name": "decline_no_free_data_path",
+      "control": {
+        "type": "decline",
+        "reason": 2
+      },
+      "bytes": [
+        0,
+        3,
+        2
+      ]
+    },
+    {
+      "name": "path_switch_to_wifi_aware",
+      "control": {
+        "type": "pathSwitch",
+        "path": 1
+      },
+      "bytes": [
+        0,
+        4,
+        1
+      ]
+    },
+    {
+      "name": "path_switch_to_ble",
+      "control": {
+        "type": "pathSwitch",
+        "path": 0
+      },
+      "bytes": [
+        0,
+        4,
+        0
+      ]
+    },
+    {
+      "name": "failed",
+      "control": {
+        "type": "failed"
+      },
+      "bytes": [
+        0,
+        5
+      ]
+    }
+  ],
+  "invalidControl": [
+    {
+      "name": "marker_only",
+      "bytes": [
+        0
+      ]
+    },
+    {
+      "name": "unknown_type",
+      "bytes": [
+        0,
+        9,
+        1
+      ]
+    },
+    {
+      "name": "not_a_control_message",
+      "bytes": [
+        123,
+        34,
+        118,
+        34,
+        58,
+        49,
+        125
+      ]
+    },
+    {
+      "name": "hello_without_version",
+      "bytes": [
+        0,
+        1
+      ]
+    },
+    {
+      "name": "offer_of_another_version",
+      "bytes": [
+        0,
+        2,
+        2,
+        17,
+        34,
+        51,
+        68,
+        85,
+        102,
+        119,
+        136,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        0
+      ]
+    },
+    {
+      "name": "offer_with_short_passphrase_bytes",
+      "bytes": [
+        0,
+        2,
+        1,
+        17,
+        34,
+        51,
+        68,
+        85,
+        102,
+        119,
+        136,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        5,
+        65,
+        66
+      ]
+    },
+    {
+      "name": "unknown_path",
+      "bytes": [
+        0,
+        4,
+        7
+      ]
+    },
+    {
+      "name": "failed_with_trailing_bytes",
+      "bytes": [
+        0,
+        5,
+        1
+      ]
+    }
+  ],
+  "records": [
+    {
+      "name": "hello_carries_the_token",
+      "kind": 1,
+      "body": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "bytes": [
+        0,
+        0,
+        0,
+        9,
+        1,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "name": "message",
+      "kind": 2,
+      "body": [
+        123,
+        34,
+        118,
+        34,
+        58,
+        49,
+        125
+      ],
+      "bytes": [
+        0,
+        0,
+        0,
+        8,
+        2,
+        123,
+        34,
+        118,
+        34,
+        58,
+        49,
+        125
+      ]
+    },
+    {
+      "name": "frame",
+      "kind": 3,
+      "body": [
+        16,
+        1,
+        2
+      ],
+      "bytes": [
+        0,
+        0,
+        0,
+        4,
+        3,
+        16,
+        1,
+        2
+      ]
+    },
+    {
+      "name": "keepalive_has_no_body",
+      "kind": 4,
+      "body": [],
+      "bytes": [
+        0,
+        0,
+        0,
+        1,
+        4
+      ]
+    }
+  ],
+  "streamSplit": [
+    {
+      "name": "three_records_fed_one_byte_at_a_time",
+      "stream": [
+        0,
+        0,
+        0,
+        8,
+        2,
+        123,
+        34,
+        118,
+        34,
+        58,
+        49,
+        125,
+        0,
+        0,
+        0,
+        4,
+        3,
+        16,
+        1,
+        2,
+        0,
+        0,
+        0,
+        3,
+        2,
+        123,
+        125
+      ],
+      "pieceSize": 1,
+      "records": [
+        {
+          "kind": 2,
+          "body": [
+            123,
+            34,
+            118,
+            34,
+            58,
+            49,
+            125
+          ]
+        },
+        {
+          "kind": 3,
+          "body": [
+            16,
+            1,
+            2
+          ]
+        },
+        {
+          "kind": 2,
+          "body": [
+            123,
+            125
+          ]
+        }
+      ]
+    },
+    {
+      "name": "three_records_fed_in_pieces_of_7",
+      "stream": [
+        0,
+        0,
+        0,
+        8,
+        2,
+        123,
+        34,
+        118,
+        34,
+        58,
+        49,
+        125,
+        0,
+        0,
+        0,
+        4,
+        3,
+        16,
+        1,
+        2,
+        0,
+        0,
+        0,
+        3,
+        2,
+        123,
+        125
+      ],
+      "pieceSize": 7,
+      "records": [
+        {
+          "kind": 2,
+          "body": [
+            123,
+            34,
+            118,
+            34,
+            58,
+            49,
+            125
+          ]
+        },
+        {
+          "kind": 3,
+          "body": [
+            16,
+            1,
+            2
+          ]
+        },
+        {
+          "kind": 2,
+          "body": [
+            123,
+            125
+          ]
+        }
+      ]
+    },
+    {
+      "name": "three_records_fed_at_once",
+      "stream": [
+        0,
+        0,
+        0,
+        8,
+        2,
+        123,
+        34,
+        118,
+        34,
+        58,
+        49,
+        125,
+        0,
+        0,
+        0,
+        4,
+        3,
+        16,
+        1,
+        2,
+        0,
+        0,
+        0,
+        3,
+        2,
+        123,
+        125
+      ],
+      "pieceSize": 27,
+      "records": [
+        {
+          "kind": 2,
+          "body": [
+            123,
+            34,
+            118,
+            34,
+            58,
+            49,
+            125
+          ]
+        },
+        {
+          "kind": 3,
+          "body": [
+            16,
+            1,
+            2
+          ]
+        },
+        {
+          "kind": 2,
+          "body": [
+            123,
+            125
+          ]
+        }
+      ]
+    }
+  ],
+  "invalidStream": [
+    {
+      "name": "zero_length",
+      "stream": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "longer_than_256_KiB",
+      "stream": [
+        0,
+        4,
+        0,
+        1,
+        2
+      ]
+    }
+  ],
+  "serviceInfo": {
+    "instanceId": [
+      17,
+      34,
+      51,
+      68,
+      85,
+      102,
+      119,
+      136
+    ],
+    "bytes": [
+      1,
+      17,
+      34,
+      51,
+      68,
+      85,
+      102,
+      119,
+      136
+    ]
+  },
+  "discoveryHello": {
+    "token": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "bytes": [
+      72,
+      1,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "gameInfoFlag": [
+    {
+      "name": "added_as_last_field",
+      "in": "{\"v\":1,\"gameId\":\"7K2F\",\"players\":2}",
+      "out": "{\"v\":1,\"gameId\":\"7K2F\",\"players\":2,\"aware\":1}"
+    },
+    {
+      "name": "added_to_an_empty_object",
+      "in": "{}",
+      "out": "{\"aware\":1}"
+    }
+  ],
+  "hasGameInfoFlag": [
+    {
+      "name": "flag_set",
+      "json": "{\"v\":1,\"aware\":1}",
+      "expected": true
+    },
+    {
+      "name": "no_flag",
+      "json": "{\"v\":1}",
+      "expected": false
+    },
+    {
+      "name": "another_version",
+      "json": "{\"v\":1,\"aware\":2}",
+      "expected": false
+    },
+    {
+      "name": "not_json",
+      "json": "hello",
+      "expected": false
+    }
+  ]
+}

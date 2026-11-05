@@ -34,6 +34,12 @@ import java.util.UUID
  *   app's games need fewer; a phone also has its own limit on simultaneous Bluetooth connections.
  * @param logCapacity how many lines [io.hypercode.hyperblekit.log.HyperBleLog.entries] keeps, at
  *   least 1. The log is shared by the whole process, so the kit created last decides.
+ * @param dataPaths whether connected phones may move their messages to Wi-Fi Aware; see
+ *   [DataPaths]. Phones with different values still play together, over Bluetooth LE.
+ * @param wifiAwareServiceName the Wi-Fi Aware service a host publishes, in DNS-SD form: an
+ *   underscore, 1 to 15 lowercase letters, digits or hyphens, then `._tcp`. Every phone in a game
+ *   must use the same one; on iOS it must also be listed under `WiFiAwareServices` in the app's
+ *   Info.plist. Only used with [DataPaths.PREFER_WIFI_AWARE].
  * @throws IllegalArgumentException if a value is outside its range.
  */
 public class HyperBleKitConfig(
@@ -48,6 +54,10 @@ public class HyperBleKitConfig(
     public val maxPlayers: Int = GameConstants.MAX_PLAYERS,
     /** How many lines the log's buffer keeps, at least 1. */
     public val logCapacity: Int = GameConstants.DEBUG_LOG_CAPACITY,
+    /** Whether connected phones may move their messages to Wi-Fi Aware; see the constructor parameter. */
+    public val dataPaths: DataPaths = DataPaths.BLE_ONLY,
+    /** The Wi-Fi Aware service name, like `_hyperblekit._tcp`; see the constructor parameter. */
+    public val wifiAwareServiceName: String = DEFAULT_WIFI_AWARE_SERVICE_NAME,
 ) {
     /** The games this app can play, in the order given to the constructor. */
     public val games: List<GameModule> = games.toList()
@@ -61,6 +71,10 @@ public class HyperBleKitConfig(
             "localNamePrefix must be 1 to $MAX_PREFIX_LENGTH ASCII characters, was \"$localNamePrefix\""
         }
         require(manufacturerId in 0..MAX_COMPANY_ID) { "manufacturerId must be 0 to 0xFFFF, was $manufacturerId" }
+        require(SERVICE_NAME.matches(wifiAwareServiceName)) {
+            "wifiAwareServiceName must look like \"_name._tcp\" with 1 to 15 lowercase letters, digits or " +
+                "hyphens as the name, was \"$wifiAwareServiceName\""
+        }
     }
 
     /** The `GameInfo` characteristic (read). */
@@ -90,6 +104,11 @@ public class HyperBleKitConfig(
 
         /** The default company identifier, 0xFFFF, which the Bluetooth SIG reserves for testing. */
         public const val DEFAULT_MANUFACTURER_ID: Int = 0xFFFF
+
+        /** The default Wi-Fi Aware service name, `_hyperblekit._tcp`. */
+        public const val DEFAULT_WIFI_AWARE_SERVICE_NAME: String = "_hyperblekit._tcp"
+
+        private val SERVICE_NAME = Regex("_[a-z0-9-]{1,15}\\._tcp")
 
         private const val MIN_PLAYERS = 2
         private const val MAX_PREFIX_LENGTH = 4
