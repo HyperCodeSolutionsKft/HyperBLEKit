@@ -48,6 +48,7 @@ packaged form. Expect API changes before 1.0.
 - [Real-time games](#real-time-games)
 - [Connection lifecycle](#connection-lifecycle)
 - [Configuration](#configuration)
+- [Wi-Fi Aware](#wi-fi-aware)
 - [Threading](#threading)
 - [Logging and diagnostics](#logging-and-diagnostics)
 - [Troubleshooting](#troubleshooting)
@@ -1103,6 +1104,8 @@ The last messages of a leaving phone are sent in the background for up to 2 seco
 | `manufacturerId` | `0xFFFF` | 0 to `0xFFFF` (Android `Int`, iOS `UInt16`) | The Bluetooth company identifier under which an Android host advertises the game code. `0xFFFF` is reserved for testing; a company that has its own identifier should use it. |
 | `maxPlayers` | 10 | 2 to 10 | Seats in a game, the host included. |
 | `logCapacity` | 500 | at least 1 | Lines kept in the log's buffer. The log is shared by the process, so the kit created last decides. |
+| `dataPaths` | `BLE_ONLY` / `.bleOnly` | `BLE_ONLY`, `PREFER_WIFI_AWARE` (iOS `.bleOnly`, `.preferWiFiAware`) | Whether connected phones may move their messages to Wi-Fi Aware. See [Wi-Fi Aware](#wi-fi-aware). |
+| `wifiAwareServiceName` | `_hyperblekit._tcp` | `_` + 1 to 15 of `a-z 0-9 -` + `._tcp` | The Wi-Fi Aware service a host publishes. Only used with `PREFER_WIFI_AWARE`. |
 
 A value outside its limits is a programming error: Android throws `IllegalArgumentException`
 from the constructor, iOS stops the program (`precondition`).
@@ -1151,6 +1154,77 @@ a game only works when every phone in it uses the same ones:
 | Successors that hold a copy of the game | 2 |
 | A paused real-time game resumes | 3 s after the last player is back |
 | A leaving phone's last messages | up to 2 s |
+
+## Wi-Fi Aware
+
+With `dataPaths = DataPaths.PREFER_WIFI_AWARE` (iOS `.preferWiFiAware`), a host and a client
+that both support Wi-Fi Aware move the messages and frames of their link from Bluetooth LE to
+Wi-Fi Aware once they are connected. Nothing else changes for the app or the game module:
+
+- Finding, joining, reconnecting and host migration still run over Bluetooth LE.
+- The game gets the same messages, in the same order, with the same size limits — frames
+  included, which stay at the link's Bluetooth LE size. A game that works over Bluetooth LE
+  works the same over Wi-Fi Aware, only with more headroom.
+- When Wi-Fi Aware breaks (Wi-Fi switched off, the hotspot switched on, out of Wi-Fi range), the
+  link falls back to Bluetooth LE without ending or pausing the session.
+- Phones without Wi-Fi Aware, or with an app built with `BLE_ONLY`, play in the same game over
+  Bluetooth LE.
+
+```kotlin
+val config = HyperBleKitConfig(games = listOf(CounterGame), dataPaths = DataPaths.PREFER_WIFI_AWARE)
+val kit = HyperBleKit(context, config)
+// Request these instead of HyperBleKit.requiredPermissions:
+val permissions = HyperBleKit.requiredPermissions(config)
+```
+
+`HyperBleKit.isWifiAwareAvailable` tells whether this phone can use Wi-Fi Aware right now. The log
+says what each link does: `PATH … offering Wi-Fi Aware`, `PATH up over Wi-Fi Aware`,
+`PATH fallback to BLE (reason)`, `PATH host declined Wi-Fi Aware (reason)`.
+
+### Status by platform
+
+| Platform | Status |
+|----------|--------|
+| Android | Implemented, Android 10 (API 29) and later, on phones that report `android.hardware.wifi.aware`. **Not yet tested on real phones.** |
+| iOS | The negotiation is implemented, but this build has no Wi-Fi Aware data path yet: an iPhone plays over Bluetooth LE with every phone. The data path (the `WiFiAware` framework, iOS 26) comes in a later version and needs a one-time pairing per pair of devices, through the system's pairing sheet. |
+| Android ↔ iPhone | Over Bluetooth LE. Wi-Fi Aware between Android and iOS is not attempted yet. |
+
+### Android setup
+
+Declare in the manifest, next to the Bluetooth permissions:
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+<!-- Android 13 and later -->
+<uses-permission
+    android:name="android.permission.NEARBY_WIFI_DEVICES"
+    android:usesPermissionFlags="neverForLocation"
+    tools:targetApi="tiramisu" />
+<!-- Android 10 to 12: Wi-Fi Aware is gated on location there. Replaces the maxSdkVersion 30 line
+     of the Bluetooth setup. -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="32" />
+
+<uses-feature android:name="android.hardware.wifi.aware" android:required="false" />
+```
+
+`HyperBleKit.requiredPermissions(config)` adds the runtime permissions Wi-Fi Aware needs on the
+running version: `NEARBY_WIFI_DEVICES` on Android 13 and later, `ACCESS_FINE_LOCATION` on
+Android 10 to 12. If the user refuses them, the kit works over Bluetooth LE only. On Android 10
+to 12, location services must also be switched on for Wi-Fi Aware.
+
+### Limits
+
+- **Data paths per host.** A phone's chip holds only a few Wi-Fi Aware data paths at once (often
+  2 to 8; Android 13 and later reports the number). They go to the first clients that ask; the
+  rest stay on Bluetooth LE and ask again later.
+- **Concurrency.** Many phones turn Wi-Fi Aware off while the hotspot or Wi-Fi Direct is on.
+- **Security.** The data path is encrypted at the Wi-Fi layer with a random passphrase per link,
+  but that passphrase is sent over Bluetooth LE, which is not encrypted. Treat the game as
+  unencrypted, as without Wi-Fi Aware.
+- **Battery.** Wi-Fi Aware stays on for as long as the session runs.
+
+The details are in the wire specification, "Wi-Fi Aware data path".
 
 ## Threading
 

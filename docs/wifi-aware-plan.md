@@ -1,6 +1,6 @@
 # Wi-Fi Aware: feature plan
 
-Status: proposal, branch `feature/wifi-aware`. Nothing here is implemented yet.
+Status: phases 1 and 2 implemented on branch `feature/wifi-aware`, not yet tested on real phones. See "Implementation status" at the end.
 
 ## Goal
 
@@ -185,3 +185,38 @@ interoperability develops.
 
 1. Should the default for new apps become `PREFER_WIFI_AWARE` once it is stable, or stay
    `BLE_ONLY`?
+
+## Implementation status
+
+Phases 1 and 2 are done (2026-11-05). Not yet tested on real phones.
+
+- **Phase 1, both platforms:** transport-control messages, the TCP record stream, the GameInfo
+  flag (`protocol/test-vectors/wifi-aware.json`, checked on Android and iOS); `HybridHostTransport`
+  / `HybridClientTransport` with the order-keeping gate; fake Wi-Fi Aware paths and end-to-end
+  games over them on both platforms; `dataPaths` and `wifiAwareServiceName` in the config.
+- **Phase 2, Android:** `WifiAwareHostPath` / `WifiAwareClientPath` (attach, publish/subscribe,
+  NAN discovery message, `WifiAwareNetworkSpecifier` data path, TCP over it), `AwareConnection`
+  (tested over loopback), `HyperBleKit.isWifiAwareAvailable`, `requiredPermissions(config)`.
+- **iOS** builds the hybrid transports with an "unsupported" Wi-Fi Aware path until phase 3, so an
+  iPhone behaves as with `.bleOnly`.
+- The wire specification has a new section, "Wi-Fi Aware data path"; the guide has "Wi-Fi Aware".
+
+Where the implementation differs from the design above, and why:
+
+1. **Control messages are ordinary chunked messages** with first byte `0x00`, not packets with a
+   `[ctrl][0xFF][0x00]` header. An `OFFER` is longer than one packet at MTU 23, and messages are
+   already reliable and ordered. Old builds never receive one, because they never send `HELLO`
+   or set the GameInfo flag.
+2. **Frames share the TCP connection** with the messages instead of using UDP. A frame slot
+   on the sender keeps only the newest frame, so head-of-line blocking stays short on a local link.
+   A UDP lane can be added later without changing the control messages.
+3. **A link lives as long as its BLE connection.** The `LinkDown` / `Disconnected` timing,
+   reconnecting and host migration stay exactly as before. Keeping a link alive on Wi-Fi Aware
+   alone would need a second liveness and reconnect logic.
+4. **Data paths go first come, first served.** Snapshot successors get no priority: the transport
+   does not know who they are.
+5. **No per-link path in `SessionDiagnostics` yet.** The log lines (`PATH …`) are the diagnostics
+   for the first round of testing on real phones.
+
+Next: phase 3 (iOS `WiFiAware` + `DeviceDiscoveryUI` pairing; needs the iOS 26 SDK and Xcode 26),
+then real-device testing of phases 2 and 3.

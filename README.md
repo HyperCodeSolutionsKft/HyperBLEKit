@@ -20,6 +20,12 @@ kit.leave()
 
 The Swift API has the same shape and the same names.
 
+**Optional: Wi-Fi Aware.** With `dataPaths = DataPaths.PREFER_WIFI_AWARE`, connected phones that
+support Wi-Fi Aware move their messages to it and fall back to Bluetooth LE when it breaks;
+discovery and joining stay on Bluetooth LE. Implemented on Android (10 and later, not yet tested
+on real phones); on iOS the data path is still to come. See the
+[guide](docs/sdk-guide.md#wi-fi-aware).
+
 ## Status
 
 Version 0.1.0. The library is unit-tested on both platforms, including complete games over

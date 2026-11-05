@@ -56,11 +56,10 @@ public final class HyperBleKit: ObservableObject {
     ///
     /// - Parameter config: the games this app can play and its Bluetooth identifiers.
     public convenience init(config: HyperBleKitConfig) {
-        let layout = config.layout
         self.init(config: config, identity: LocalIdentity(),
-                  scanner: TransportFactory.makeScanner(layout: layout),
-                  makeHostTransport: { TransportFactory.makeHostTransport(layout: layout) },
-                  makeClientTransport: { TransportFactory.makeClientTransport(layout: layout) })
+                  scanner: TransportFactory.makeScanner(layout: config.layout),
+                  makeHostTransport: { TransportFactory.makeHostTransport(config: config) },
+                  makeClientTransport: { TransportFactory.makeClientTransport(config: config) })
     }
 
     init(config: HyperBleKitConfig, identity: LocalIdentity, scanner: GameScanning,

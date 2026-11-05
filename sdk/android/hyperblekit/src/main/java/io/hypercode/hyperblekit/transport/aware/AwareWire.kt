@@ -33,7 +33,7 @@ internal object AwareWire {
     fun withAwareFlag(info: ByteArray): ByteArray {
         val text = String(info, Charsets.UTF_8)
         if (!text.endsWith("}")) return info
-        val separator = if (text.trimEnd('}').trimEnd().endsWith("{")) "" else ","
+        val separator = if (text.dropLast(1).trimEnd().endsWith("{")) "" else ","
         return (text.dropLast(1) + "$separator\"$GAME_INFO_FIELD\":$VERSION}").toByteArray(Charsets.UTF_8)
     }
 
