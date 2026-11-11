@@ -30,14 +30,30 @@ change. The protocol is specified in [`docs/wire-protocol.md`](../../docs/wire-p
     breaking an older build.
   - `ts` is an Int64 in milliseconds.
 
+- `wifi-aware.json` — Wi-Fi Aware (wire specification, "Wi-Fi Aware data path").
+  - `control`: encoding `control` must give `bytes`, and decoding `bytes` must give `control`.
+  - `invalidControl`: `bytes` that must decode to nothing (null / nil).
+  - `records`: a stream record of `kind` with `body` encodes to `bytes`.
+  - `streamSplit`: feeding `stream` to a fresh decoder in pieces of `pieceSize` bytes must yield
+    `records`, in order, and nothing more.
+  - `invalidStream`: feeding `stream` must fail (the connection is closed).
+  - `serviceInfo`, `discoveryHello`: the publish service-specific info and the discovery message.
+  - `gameInfoFlag`: adding the `aware` flag (and `awarePaired` when `paired` is true) to the
+    GameInfo JSON `in` gives `out`, byte for byte.
+  - `hasGameInfoFlag`: whether the GameInfo `json` announces Wi-Fi Aware.
+  - `awareScheme`: how a client on `platform`, allowing `crossPlatform` or not, reaches the host
+    of GameInfo `json`: `"nan"`, `"paired"`, or `null` for not at all.
+  - `serviceNames`: which Wi-Fi Aware service names a config accepts.
+
 The `view`, `action` and `gameState` objects in the vectors belong to a made-up counter game. The
 protocol carries them without reading them.
 
 ## Where they are used
 
 - Android: `sdk/android/hyperblekit/src/test/java/io/hypercode/hyperblekit/protocol/`
-  (`ChunkingVectorsTest`, `EnvelopeVectorsTest`).
-- iOS: `sdk/ios/Tests/HyperBleKitTests/` (`ChunkingVectorsTests`, `EnvelopeVectorsTests`).
+  (`ChunkingVectorsTest`, `EnvelopeVectorsTest`, `WifiAwareVectorsTest`).
+- iOS: `sdk/ios/Tests/HyperBleKitTests/` (`ChunkingVectorsTests`, `EnvelopeVectorsTests`,
+  `WifiAwareVectorsTests`).
 
 Both find this folder by walking up from where the test runs, so it must stay at
 `protocol/test-vectors` in the repository root.

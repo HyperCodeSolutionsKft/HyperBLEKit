@@ -45,6 +45,12 @@ public final class HyperBleKit: ObservableObject {
     /// cleared by `leave()`.
     @Published public private(set) var session: GameSession?
 
+    /// Whether this iPhone can move a game's messages to Wi-Fi Aware: the config asks for
+    /// `.preferWiFiAware`, the iPhone runs iOS 26 and supports Wi-Fi Aware, the app was built with
+    /// the iOS 26 SDK, and its Info.plist declares the service. It does not say whether a paired
+    /// iPhone is near; without one the game runs over Bluetooth LE.
+    public var isWiFiAwareAvailable: Bool { TransportFactory.isWiFiAwareSupported(config: config) }
+
     private let makeHostTransport: () -> GameHostTransport
     private let makeClientTransport: () -> GameClientTransport
     private let discovery: Discovery
@@ -56,11 +62,10 @@ public final class HyperBleKit: ObservableObject {
     ///
     /// - Parameter config: the games this app can play and its Bluetooth identifiers.
     public convenience init(config: HyperBleKitConfig) {
-        let layout = config.layout
         self.init(config: config, identity: LocalIdentity(),
-                  scanner: TransportFactory.makeScanner(layout: layout),
-                  makeHostTransport: { TransportFactory.makeHostTransport(layout: layout) },
-                  makeClientTransport: { TransportFactory.makeClientTransport(layout: layout) })
+                  scanner: TransportFactory.makeScanner(layout: config.layout),
+                  makeHostTransport: { TransportFactory.makeHostTransport(config: config) },
+                  makeClientTransport: { TransportFactory.makeClientTransport(config: config) })
     }
 
     init(config: HyperBleKitConfig, identity: LocalIdentity, scanner: GameScanning,

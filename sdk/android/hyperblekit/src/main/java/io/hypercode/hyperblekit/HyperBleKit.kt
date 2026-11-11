@@ -1,17 +1,28 @@
 package io.hypercode.hyperblekit
 
 import android.content.Context
+import android.os.Build
 import android.os.SystemClock
 import io.hypercode.hyperblekit.log.HyperBleLog
 import io.hypercode.hyperblekit.session.HostSession
 import io.hypercode.hyperblekit.transport.GameClientTransport
 import io.hypercode.hyperblekit.transport.GameHostTransport
 import io.hypercode.hyperblekit.transport.GameScanner
+import io.hypercode.hyperblekit.transport.aware.AwareClientPath
+import io.hypercode.hyperblekit.transport.aware.AwareHostPath
+import io.hypercode.hyperblekit.transport.aware.MainScheduler
+import io.hypercode.hyperblekit.transport.aware.UnsupportedAwareClientPath
+import io.hypercode.hyperblekit.transport.aware.UnsupportedAwareHostPath
+import io.hypercode.hyperblekit.transport.aware.WifiAwareClientPath
+import io.hypercode.hyperblekit.transport.aware.WifiAwareHostPath
+import io.hypercode.hyperblekit.transport.aware.WifiAwareSupport
 import io.hypercode.hyperblekit.transport.ble.BleClientTransport
 import io.hypercode.hyperblekit.transport.ble.BleGameScanner
 import io.hypercode.hyperblekit.transport.ble.BleHostTransport
 import io.hypercode.hyperblekit.transport.ble.BlePermissions
 import io.hypercode.hyperblekit.transport.ble.BleUuids
+import io.hypercode.hyperblekit.transport.hybrid.HybridClientTransport
+import io.hypercode.hyperblekit.transport.hybrid.HybridHostTransport
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,8 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Local multiplayer for phones that are near each other, over Bluetooth Low Energy only: no
- * internet, no Wi-Fi, no server. This class is the entry point of the SDK.
+ * Local multiplayer for phones that are near each other, over Bluetooth Low Energy: no internet,
+ * no Wi-Fi network, no server. Phones that support it can move a game's messages to Wi-Fi Aware
+ * (see [DataPaths]). This class is the entry point of the SDK.
  *
  * One phone hosts a game and the others find and join it. The host runs the game's rules (a
  * [io.hypercode.hyperblekit.game.GameModule] the app provides) and sends every player their own
@@ -69,7 +81,14 @@ public class HyperBleKit private constructor(
         scope: CoroutineScope,
         publishDispatcher: CoroutineDispatcher,
         elapsedMillis: () -> Long,
-    ) : this(config, Wiring(identity, hostTransport, scanner, clientTransportFactory, scope, publishDispatcher, elapsedMillis))
+        wifiAwareAvailable: () -> Boolean = { false },
+    ) : this(
+        config,
+        Wiring(
+            identity, hostTransport, scanner, clientTransportFactory, scope, publishDispatcher, elapsedMillis,
+            wifiAwareAvailable, wifiAwarePairing = null,
+        ),
+    )
 
     /** Everything a kit works with besides its configuration. */
     private class Wiring(
@@ -84,6 +103,10 @@ public class HyperBleKit private constructor(
         val publishDispatcher: CoroutineDispatcher,
         /** The monotonic clock every duration is measured with, in ms. */
         val elapsedMillis: () -> Long,
+        /** Whether Wi-Fi Aware can carry messages right now (see [isWifiAwareAvailable]). */
+        val wifiAwareAvailable: () -> Boolean,
+        /** See [HyperBleKit.wifiAwarePairing]. */
+        val wifiAwarePairing: WifiAwarePairing?,
         /** Shared with the client transports so the connection priority can be changed at runtime. */
         val connectionPriority: ConnectionPriorityHolder = ConnectionPriorityHolder(),
     )
@@ -94,6 +117,7 @@ public class HyperBleKit private constructor(
     private val scope = wiring.scope
     private val publishDispatcher = wiring.publishDispatcher
     private val elapsedMillis = wiring.elapsedMillis
+    private val wifiAwareAvailable = wiring.wifiAwareAvailable
     private val connectionPriorityHolder = wiring.connectionPriority
     private var isClosed = false
 
@@ -126,6 +150,23 @@ public class HyperBleKit private constructor(
      * A phone that cannot host can still join and play, but never takes a game over.
      */
     public val canHost: Boolean get() = hostTransport.canHost
+
+    /**
+     * Whether this phone can move a game's messages to Wi-Fi Aware right now: the config asks for
+     * [DataPaths.PREFER_WIFI_AWARE], the phone has Wi-Fi Aware and Android 10 or later, the
+     * permissions are granted, and Wi-Fi Aware is switched on (it is off with Wi-Fi, and on many
+     * phones while the hotspot is on). Asked from the system each time it is read; it is not a flow.
+     * False changes nothing for the game, which then runs over Bluetooth LE.
+     */
+    public val isWifiAwareAvailable: Boolean get() = wifiAwareAvailable()
+
+    /**
+     * **Experimental.** Pairs this phone with an iPhone for Wi-Fi Aware; see [WifiAwarePairing].
+     * Not null only with [DataPaths.PREFER_WIFI_AWARE] and
+     * [HyperBleKitConfig.experimentalCrossPlatformWifiAware] on Android 10 or later; whether the
+     * phone can pair at all is [WifiAwarePairing.isSupported].
+     */
+    public val wifiAwarePairing: WifiAwarePairing? = wiring.wifiAwarePairing
 
     /**
      * Whether discovery is running, and why not if it failed (for example Bluetooth is off).
@@ -312,6 +353,22 @@ public class HyperBleKit private constructor(
         public val requiredPermissions: List<String> get() = BlePermissions.required()
 
         /**
+         * The runtime permissions a kit with [config] needs on this Android version: those of
+         * [requiredPermissions], and with [DataPaths.PREFER_WIFI_AWARE] also those of Wi-Fi Aware
+         * (`NEARBY_WIFI_DEVICES` on Android 13 and later, `ACCESS_FINE_LOCATION` on Android 10 to
+         * 12). Without the Wi-Fi Aware ones the kit works, over Bluetooth LE only.
+         *
+         * @param config the configuration the kit is created with.
+         * @return `Manifest.permission` names, without duplicates.
+         */
+        public fun requiredPermissions(config: HyperBleKitConfig): List<String> =
+            if (config.dataPaths == DataPaths.PREFER_WIFI_AWARE) {
+                (BlePermissions.required() + WifiAwareSupport.permissions()).distinct()
+            } else {
+                BlePermissions.required()
+            }
+
+        /**
          * How many clients the host keeps ready to take the game over: the first this many of
          * [SessionState.successors] regularly receive a full copy of the game. Always 2.
          */
@@ -320,19 +377,55 @@ public class HyperBleKit private constructor(
         private fun bleWiring(appContext: Context, config: HyperBleKitConfig): Wiring {
             val uuids = BleUuids(config)
             val connectionPriority = ConnectionPriorityHolder()
+            val hostTransport = BleHostTransport(appContext, uuids)
+            val clientTransport = {
+                BleClientTransport(appContext, uuids, config.localNamePrefix) { connectionPriority.value }
+            }
+            // With BLE_ONLY the BLE transports are used as they are: nothing of Wi-Fi Aware runs.
+            val useAware = config.dataPaths == DataPaths.PREFER_WIFI_AWARE &&
+                Build.VERSION.SDK_INT >= WifiAwareSupport.MIN_SDK
+            val scheduler = MainScheduler { delay, block -> WifiAwareSupport.mainHandler.postDelayed(block, delay) }
+            val crossPlatform = useAware && config.experimentalCrossPlatformWifiAware
+            val pairing = if (crossPlatform) WifiAwarePairing(appContext, config.wifiAwareServiceName) else null
             return Wiring(
                 identity = LocalIdentity(appContext),
-                hostTransport = BleHostTransport(appContext, uuids),
+                hostTransport = if (useAware) {
+                    HybridHostTransport(hostTransport, awareHostPath(appContext, config, pairing), scheduler)
+                } else {
+                    hostTransport
+                },
                 scanner = BleGameScanner(appContext, uuids, config.localNamePrefix),
-                clientTransportFactory = {
-                    BleClientTransport(appContext, uuids, config.localNamePrefix) { connectionPriority.value }
+                clientTransportFactory = if (useAware) {
+                    {
+                        HybridClientTransport(
+                            clientTransport(), awareClientPath(appContext, config), scheduler, crossPlatform = crossPlatform,
+                        )
+                    }
+                } else {
+                    clientTransport
                 },
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
                 // Not `.immediate`: this one posts to the main thread's queue even from the main thread.
                 publishDispatcher = Dispatchers.Main,
                 elapsedMillis = SystemClock::elapsedRealtime,
+                wifiAwareAvailable = { useAware && WifiAwareSupport.isAvailable(appContext) },
+                wifiAwarePairing = pairing,
                 connectionPriority = connectionPriority,
             )
         }
+
+        private fun awareHostPath(appContext: Context, config: HyperBleKitConfig, pairing: WifiAwarePairing?): AwareHostPath =
+            if (Build.VERSION.SDK_INT >= WifiAwareSupport.MIN_SDK) {
+                WifiAwareHostPath(appContext, config.wifiAwareServiceName, config.experimentalCrossPlatformWifiAware, pairing)
+            } else {
+                UnsupportedAwareHostPath
+            }
+
+        private fun awareClientPath(appContext: Context, config: HyperBleKitConfig): AwareClientPath =
+            if (Build.VERSION.SDK_INT >= WifiAwareSupport.MIN_SDK) {
+                WifiAwareClientPath(appContext, config.wifiAwareServiceName, config.experimentalCrossPlatformWifiAware)
+            } else {
+                UnsupportedAwareClientPath
+            }
     }
 }

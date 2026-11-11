@@ -1,8 +1,9 @@
 # Module hyperblekit
 
-HyperBleKit: local multiplayer for nearby phones, Android and iOS mixed, over Bluetooth Low Energy
-only. One phone hosts a game, the others find and join it; the app brings the game's rules and its
-screens, the kit does the rest.
+HyperBleKit: local multiplayer for nearby phones, Android and iOS mixed, over Bluetooth Low Energy,
+with Wi-Fi Aware as an optional faster path between phones that support it (`DataPaths`). One phone
+hosts a game, the others find and join it; the app brings the game's rules and its screens, the
+kit does the rest.
 
 Start with `io.hypercode.hyperblekit.HyperBleKit`.
 
@@ -19,6 +20,8 @@ The kit itself and everything a session screen shows.
 - `RealtimeLink` and `RealtimeFrame` are what the screen of a real-time game uses.
 - `LocalIdentity` is this phone's device ID and player name.
 - `SessionDiagnostics` holds the debug tools of a session.
+- `DataPaths` chooses whether Wi-Fi Aware may carry a game's messages; `WifiAwarePairing` (and
+  `WifiAwarePairingState`) pairs with an iPhone for the experimental cross-platform mode.
 
 Everything here is used on the main thread.
 

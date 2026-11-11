@@ -80,7 +80,8 @@ publishing {
             pom {
                 name.set("HyperBleKit")
                 description.set(
-                    "Local multiplayer for nearby phones, Android and iOS mixed, over Bluetooth Low Energy only: " +
+                    "Local multiplayer for nearby phones, Android and iOS mixed, over Bluetooth Low Energy " +
+                        "(optionally Wi-Fi Aware): " +
                         "discovery, connection, reliable state sync, a real-time frame lane, reconnect and host migration."
                 )
                 setting("hyperblekit.pom.url", "HYPERBLEKIT_POM_URL")?.let { url.set(it) }

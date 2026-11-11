@@ -1,8 +1,8 @@
 # HyperBleKit
 
-Local multiplayer for phones that are near each other, over Bluetooth Low Energy only. Android
-phones and iPhones play in the same game, up to 10 players, with no Wi-Fi, no internet, no server
-and no pairing dialog.
+Local multiplayer for phones that are near each other, over Bluetooth Low Energy. Android phones
+and iPhones play in the same game, up to 10 players, with no Wi-Fi network, no internet, no server
+and no pairing dialog. Optionally, phones that support Wi-Fi Aware move their messages to it.
 
 You write the rules of your game as a **game module** (a state machine without any I/O) and your
 own screens. HyperBleKit does the rest: one phone hosts a game and the others find and join it,
@@ -19,6 +19,13 @@ kit.leave()
 ```
 
 The Swift API has the same shape and the same names.
+
+**Optional: Wi-Fi Aware.** With `dataPaths = DataPaths.PREFER_WIFI_AWARE`, connected phones that
+support Wi-Fi Aware move their messages to it and fall back to Bluetooth LE when it breaks;
+discovery and joining stay on Bluetooth LE. Between two Android phones (Android 10 and later) or
+two paired iPhones (iOS 26, built with Xcode 26); between an Android phone and an iPhone only as an
+experiment (`experimentalCrossPlatformWifiAware`), which nobody has seen work yet. None of it has
+been tested on real phones. See the [guide](docs/sdk-guide.md#wi-fi-aware).
 
 ## Status
 

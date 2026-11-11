@@ -1,6 +1,6 @@
 # HyperBleKit wire protocol
 
-This document specifies what HyperBleKit devices send to each other over Bluetooth Low Energy: the advertising data, the GATT service, the chunk and frame formats, the JSON messages, and the rules for sequencing, state sync, reconnection and host migration.
+This document specifies what HyperBleKit devices send to each other over Bluetooth Low Energy: the advertising data, the GATT service, the chunk and frame formats, the JSON messages, and the rules for sequencing, state sync, reconnection and host migration. It also specifies the optional Wi-Fi Aware data path, which carries the same messages between phones that support it.
 
 The Android and iOS implementations must agree on everything here byte for byte; a phone of either platform can host the other. Shared test vectors in `protocol/test-vectors/` check the envelope and the chunking on both platforms.
 
@@ -18,6 +18,7 @@ This is a reference for people implementing or debugging the protocol. How to us
 - [Game modules](#game-modules): [Real-time games](#real-time-games)
 - [Reliability Rules](#reliability-rules): [Reconnection](#reconnection)
 - [Host Migration](#host-migration)
+- [Wi-Fi Aware data path](#wi-fi-aware-data-path): [Capability in GameInfo](#capability-in-gameinfo), [Transport-control messages](#transport-control-messages), [Setting up the data path](#setting-up-the-data-path), [Between two iPhones](#between-two-iphones), [Android and iPhone (experimental)](#android-and-iphone-experimental), [The record stream](#the-record-stream), [Switching paths](#switching-paths)
 - [Known BLE Constraints](#known-ble-constraints)
 
 ---
@@ -632,6 +633,126 @@ Times run from the moment a client detects the loss (disconnect, or 10 s of sile
 - An unplanned takeover pauses the game for roughly 10–20 s.
 - A phone that cannot advertise never becomes host.
 - If the host dies before the latest snapshot arrives, the game continues from the previous one.
+
+---
+
+## Wi-Fi Aware data path
+
+Optional, and off unless an app opts in (`DataPaths.PREFER_WIFI_AWARE` / `.preferWiFiAware`). Between a host and a client that both support Wi-Fi Aware, the messages and frames of their link move from GATT to a TCP connection over a Wi-Fi Aware (NAN) data path. Nothing above the transport changes: the same messages, the same `seq` and `stateVersion` rules, the same heartbeats and timeouts.
+
+- **BLE stays the anchor.** Discovery, `GameInfo`, connecting, reconnecting and host migration all run over BLE as described above. A link lives exactly as long as its BLE connection; the Wi-Fi Aware data path is an extra pipe under the same link.
+- **Limits do not change.** A message may be at most as long as the link's BLE chunking allows (255 × (chunk length − 3)), and a frame payload at most the link's BLE chunk length − 3, even over Wi-Fi Aware. A game behaves the same after a fallback.
+- **Mixed games work.** A phone without Wi-Fi Aware, or with an app that did not opt in, simply never asks for it and plays over BLE.
+- **Test vectors**: `protocol/test-vectors/wifi-aware.json` covers every byte format in this section.
+
+### Capability in GameInfo
+
+A host that can publish over Wi-Fi Aware adds `"aware":1` as the last field of its `GameInfo`, and `"awarePaired":1` after it if it also takes clients by the **paired scheme** (below): an iPhone host always, an Android host only with the experimental cross-platform option and Wi-Fi Aware pairing support. Clients without Wi-Fi Aware ignore both (*JSON rules*: unknown fields are ignored).
+
+There are two ways a client finds its host's data path:
+
+| Scheme | Used between | How |
+|--------|--------------|-----|
+| **NAN** | two Android phones | instance ID in the publication, NAN discovery message, passphrase-secured data path ([Setting up the data path](#setting-up-the-data-path)) |
+| **paired** | two iPhones; Android and iPhone (experimental) | paired devices only, the host picked by the echo of the token ([Between two iPhones](#between-two-iphones)) |
+
+A client asks for a data path only if `"aware":1` is present, and then:
+
+- the host's `hostPlatform` is its own: by its platform's own scheme (Android NAN, iOS paired);
+- the host is on the other platform: by the paired scheme, only if the client has the experimental cross-platform option on **and** the host announces `"awarePaired":1`;
+- otherwise not at all; the link stays on BLE.
+
+### Transport-control messages
+
+Negotiation travels **over BLE as ordinary chunked messages**, told apart from protocol messages by their first byte `0x00`, which a JSON message never starts with. The transport consumes them; they never reach the message protocol. Only a peer that announced support (the `aware` field, or a `HELLO`) ever receives one, so builds without Wi-Fi Aware never see them.
+
+```text
+[0x00][type: 1 byte][body...]
+```
+
+| Type | Name | Direction | Body |
+|------|------|-----------|------|
+| `0x01` | `HELLO` | client → host | `[version]` (1) |
+| `0x02` | `OFFER` | host → client | `[version][instanceId: 8][token: 8][passLen: 1][passphrase: UTF-8]` |
+| `0x03` | `DECLINE` | host → client | `[reason]`: 1 unavailable, 2 no free data path |
+| `0x04` | `PATH_SWITCH` | either | `[path]`: 0 BLE, 1 Wi-Fi Aware — "my messages after this one travel on `path`" |
+| `0x05` | `FAILED` | client → host | empty — the data path could not be set up; the host releases it |
+
+A malformed control message, or one of an unknown type or version, is logged and ignored.
+
+- A client sends `HELLO` once its link is ready, if the host's `GameInfo` has `"aware":1`.
+- The host answers `OFFER`, or `DECLINE` when it is not publishing (yet) or has no free data path. Data paths are given first come, first served, up to what the host's chip supports.
+- A declined client sends `HELLO` again after 10 s, 3 times in all per connection.
+- `instanceId` is random per hosting session; `token` and `passphrase` (32 letters and digits) are random per offer. An offer the client does not use within 20 s is dropped.
+
+### Setting up the data path
+
+```text
+Host                                          Client
+ attach, open TCP server, publish
+   service  <serviceName>  (default _hyperblekit._tcp)
+   serviceSpecificInfo  [version][instanceId]
+                                    ◀── BLE ── HELLO
+ OFFER(instanceId, token, passphrase) ── BLE ──▶
+                                               attach, subscribe <serviceName>
+                                               the publication whose info carries instanceId is the host
+                         ◀── NAN message ──── ['H' 0x48][version][token]
+ request data path (peer, passphrase, port)    request data path (peer, passphrase)
+                     ═══ NDP up (PSK, encrypted) ═══
+                         ◀──── TCP ─────────── connect to the host's IPv6 address and port
+                         ◀──── TCP ─────────── HELLO record (token)
+ PATH_SWITCH(1) ── BLE ──▶                     PATH_SWITCH(1) ── BLE ──▶
+```
+
+The token ties the TCP connection to the BLE link the offer went over. A connection whose first record is not a `HELLO` with a token the host offered is closed. Once the host has tied the connection to its link, it answers with a `HELLO` record carrying the same token; a client that has not seen it within 3 s gives that connection up. The client gives up after 20 s without a connection, sends `FAILED`, and stays on BLE.
+
+The data path is encrypted at the Wi-Fi layer with the offer's passphrase. The passphrase itself travels over BLE, which is not encrypted: this protects against someone who only listens to Wi-Fi, not against someone who also records the BLE traffic.
+
+### Between two iPhones
+
+Apple's `WiFiAware` framework (iOS 26) has no service-specific info and no discovery messages, and an iPhone connects only to devices it has **paired** with (once, through the system's pairing sheet). The control messages and the record stream are the same; only how the client finds its host differs:
+
+- The host listens on the service for all paired devices; it does not publish an instance ID.
+- The client browses the service among its paired devices, connects to each one it has not tried yet, sends `HELLO(token)`, and keeps the first connection that answers with the same `HELLO`. A host that does not know the token closes the connection.
+- `instanceId` and `passphrase` in the `OFFER` are filled but not used: pairing secures the data path.
+- Unpaired iPhones never get a connection: the client gives up after 20 s, sends `FAILED`, and stays on BLE.
+
+### Android and iPhone (experimental)
+
+The paired scheme on Android, so that an Android phone can stand in for an iPhone. Wi-Fi Aware 4.0 pairing with a six-digit code (bootstrapping: the publisher **displays** the code, the subscriber **types** it; cipher suite PASN-128), with pairing verification and the pairing cache on, so a pair of phones pairs once.
+
+- **Android host:** its publication carries a pairing configuration. A pairing request is accepted with the code the app shows, while it waits for one, and refused otherwise. For every peer that completes or verifies a pairing, the host requests a data path to that peer at once (an iPhone sends no discovery message) with the server's port; the TCP connection that follows is tied to its link by the token in its `HELLO`, as for any client.
+- **Android client:** subscribes with a pairing configuration; every publisher it has paired with verifies the pairing by itself; for each verified one in turn it requests a data path, connects, sends `HELLO(token)` and keeps the first host that echoes it.
+- **The open question:** pairing uses PASN, but Android's data path takes only the NCS cipher suites, and the platform documents no key for a paired peer's data path. The implementation asks for NCS-PK-128 without a key and falls back to an open data path, which an iPhone refuses. No Android ↔ iPhone data path has been reported working by anyone.
+
+### The record stream
+
+The TCP connection carries records:
+
+```text
+[length: 4 bytes, big-endian][kind: 1 byte][body...]      length = 1 + body length
+```
+
+| Kind | Name | Body |
+|------|------|------|
+| `0x01` | `HELLO` | the token: client → host as the first record; host → client as the answer once bound |
+| `0x02` | `MESSAGE` | one whole message, unchunked |
+| `0x03` | `FRAME` | one real-time frame payload, without `frameSeq` (TCP neither reorders nor duplicates) |
+| `0x04` | `KEEPALIVE` | empty |
+
+- A record longer than 256 KiB, or with length 0, closes the connection.
+- Each side keeps one queue of messages and **one slot for the newest frame**, as on BLE; a waiting frame goes before the next message.
+- A side that has sent nothing for 2 s sends a `KEEPALIVE`. A connection that has received nothing for 6 s is dead.
+- Frames from Wi-Fi Aware count as traffic for the heartbeat like frames from BLE.
+
+### Switching paths
+
+Each direction of a link switches on its own:
+
+1. **Up.** Once the data path is up, the sender queues `PATH_SWITCH(1)` over BLE behind every message already queued there, then sends every further message and frame over Wi-Fi Aware.
+2. **Order.** Wi-Fi Aware is faster, so its first messages can overtake the last BLE ones. The receiver delivers BLE messages at once and holds messages from Wi-Fi Aware until `PATH_SWITCH(1)` arrives over BLE — or for 3 s at most (or 256 messages), in case that chunk was lost. Frames are never held.
+3. **Fallback.** When the TCP connection breaks or goes silent, or the data path is lost (Wi-Fi off, hotspot on), the sender goes back to BLE at once and sends `PATH_SWITCH(0)` over BLE. Held messages are delivered. Messages lost on the way are recovered by the protocol's own rules, exactly as after a dropped BLE chunk; the link is not reported down.
+4. **Leaving.** A client that disconnects while on Wi-Fi Aware first lets its queue there go out (1 s at most), then closes BLE, so its `LEAVE` is not overtaken by the BLE disconnect.
 
 ---
 
