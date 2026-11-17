@@ -760,5 +760,19 @@
       "crossPlatform": true,
       "expected": null
     }
+  ],
+  "nanServiceNames": [
+    {
+      "name": "_hyperblekit._tcp",
+      "nan": "hyperblekit.tcp"
+    },
+    {
+      "name": "_my-game2._tcp",
+      "nan": "my-game2.tcp"
+    },
+    {
+      "name": "_a._tcp",
+      "nan": "a.tcp"
+    }
   ]
 }

@@ -656,6 +656,8 @@ There are two ways a client finds its host's data path:
 | **NAN** | two Android phones | instance ID in the publication, NAN discovery message, passphrase-secured data path ([Setting up the data path](#setting-up-the-data-path)) |
 | **paired** | two iPhones; Android and iPhone (experimental) | paired devices only, the host picked by the echo of the token ([Between two iPhones](#between-two-iphones)) |
 
+Each scheme publishes and subscribes under its own service name. The paired scheme uses `<serviceName>` itself, the DNS-SD form iOS requires (default `_hyperblekit._tcp`). The NAN scheme uses its **NAN name**: `<serviceName>` with every `_` removed (`hyperblekit.tcp`), because Android 10 to 13 accept only `0-9 a-z A-Z - .` in a Wi-Fi Aware service name. An Android host that takes paired clients publishes both.
+
 A client asks for a data path only if `"aware":1` is present, and then:
 
 - the host's `hostPlatform` is its own: by its platform's own scheme (Android NAN, iOS paired);
@@ -690,11 +692,11 @@ A malformed control message, or one of an unknown type or version, is logged and
 ```text
 Host                                          Client
  attach, open TCP server, publish
-   service  <serviceName>  (default _hyperblekit._tcp)
+   service  <NAN name>  (default hyperblekit.tcp)
    serviceSpecificInfo  [version][instanceId]
                                     ◀── BLE ── HELLO
  OFFER(instanceId, token, passphrase) ── BLE ──▶
-                                               attach, subscribe <serviceName>
+                                               attach, subscribe <NAN name>
                                                the publication whose info carries instanceId is the host
                          ◀── NAN message ──── ['H' 0x48][version][token]
  request data path (peer, passphrase, port)    request data path (peer, passphrase)

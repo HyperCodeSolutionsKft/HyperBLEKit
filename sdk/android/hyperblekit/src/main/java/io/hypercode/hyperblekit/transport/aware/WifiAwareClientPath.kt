@@ -171,8 +171,10 @@ internal class WifiAwareClientPath(
     private fun attached(session: WifiAwareSession) {
         this.session = session
         val armed = generation
+        // Each scheme has its own name: see AwareWire.nanServiceName.
+        val name = if (scheme == AwareScheme.PAIRED) serviceName else AwareWire.nanServiceName(serviceName)
         val builder = SubscribeConfig.Builder()
-            .setServiceName(serviceName)
+            .setServiceName(name)
             .setSubscribeType(SubscribeConfig.SUBSCRIBE_TYPE_PASSIVE)
         if (scheme == AwareScheme.PAIRED && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             builder.setPairingConfig(WifiAwareSupport.subscriberPairingConfig())

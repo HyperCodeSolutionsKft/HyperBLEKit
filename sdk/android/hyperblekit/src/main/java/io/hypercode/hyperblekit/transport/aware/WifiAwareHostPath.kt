@@ -31,8 +31,9 @@ import java.net.Socket
 /**
  * Host side of Wi-Fi Aware on Android (wire specification, "Wi-Fi Aware data path"):
  *
- * 1. [start]: attach to Wi-Fi Aware, open a TCP server socket, publish [serviceName] with
- *    `[version][instanceId]` as service-specific info. [isReady] once publishing.
+ * 1. [start]: attach to Wi-Fi Aware, open a TCP server socket, publish the NAN form of
+ *    [serviceName] ([AwareWire.nanServiceName]) with `[version][instanceId]` as service-specific
+ *    info. [isReady] once publishing.
  * 2. [offer] for a link: a fresh token and passphrase, sent to the client over BLE by the hybrid
  *    transport.
  * 3. The client finds the publication, sends `['H'][version][token]` as a discovery message;
@@ -41,8 +42,9 @@ import java.net.Socket
  * 4. The client connects over TCP and sends a `HELLO` record with the token: the link's path is
  *    up ([AwareHostEvent.PathUp]).
  *
- * **Experimental, paired scheme** ([crossPlatform], Android 14 with Wi-Fi Aware pairing): the
- * publication also takes pairing requests while [pairing] waits for one, and for every peer that
+ * **Experimental, paired scheme** ([crossPlatform], Android 14 with Wi-Fi Aware pairing): a second
+ * publication, of [serviceName] itself (the DNS-SD form iOS requires), takes pairing requests
+ * while [pairing] waits for one, and for every peer that
  * pairs or verifies an earlier pairing (an iPhone) the host requests a data path secured by the
  * pairing, at once, without a discovery message: an iPhone sends none. Its TCP connection is then
  * tied to a link by the token in its HELLO, as for any client.
@@ -77,7 +79,11 @@ internal class WifiAwareHostPath(
     /** Counts starts and stops, so a callback of an earlier session does nothing. */
     private var generation = 0
     private var session: WifiAwareSession? = null
+    /** The NAN-scheme publication (Android clients). */
     private var publishSession: PublishDiscoverySession? = null
+
+    /** The paired-scheme publication (iPhones), only while [acceptsPairedClients]. */
+    private var pairedPublishSession: PublishDiscoverySession? = null
     private var server: ServerSocket? = null
     private var instanceId = ByteArray(0)
     private val links = LinkedHashMap<LinkId, Pending>()
@@ -149,8 +155,7 @@ internal class WifiAwareHostPath(
     override fun stopAfterFlush() {
         isStarted = false
         isReady = false
-        publishSession?.close()
-        publishSession = null
+        closePublications()
         val flushing = links.values.mapNotNull { it.connection }
         links.values.forEach { it.connection = null }
         flushing.forEach { it.closeAfterFlush(WifiAwareSupport.FLUSH_TIMEOUT_MILLIS) {} }
@@ -230,14 +235,20 @@ internal class WifiAwareHostPath(
         server = socket
         startAcceptLoop(socket, generation)
         instanceId = WifiAwareSupport.randomId()
-        val builder = PublishConfig.Builder()
-            .setServiceName(serviceName)
+        publishNan(session, socket.localPort)
+        if (acceptsPairedClients && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            publishPaired(session, socket.localPort)
+        }
+    }
+
+    /** The NAN-scheme publication: Android clients find it and send their discovery message. */
+    private fun publishNan(session: WifiAwareSession, port: Int) {
+        val name = AwareWire.nanServiceName(serviceName)
+        val config = PublishConfig.Builder()
+            .setServiceName(name)
             .setServiceSpecificInfo(AwareWire.serviceInfo(instanceId))
             .setPublishType(PublishConfig.PUBLISH_TYPE_UNSOLICITED)
-        if (acceptsPairedClients && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            builder.setPairingConfig(WifiAwareSupport.publisherPairingConfig())
-        }
-        val config = builder.build()
+            .build()
         val armed = generation
         guarded("publish") {
             session.publish(config, object : DiscoverySessionCallback() {
@@ -248,30 +259,63 @@ internal class WifiAwareHostPath(
                     }
                     publishSession = session
                     isReady = true
-                    pairing?.hostIsPublishing = true
-                    HyperBleLog.event("Wi-Fi Aware: publishing $serviceName, port ${socket.localPort}")
+                    HyperBleLog.event("Wi-Fi Aware: publishing $name, port $port")
                 }
 
                 override fun onSessionConfigFailed() {
-                    if (armed == generation) HyperBleLog.event("Wi-Fi Aware: publishing failed", LogLevel.WARN)
+                    if (armed == generation) HyperBleLog.event("Wi-Fi Aware: publishing $name failed", LogLevel.WARN)
                 }
 
                 override fun onSessionTerminated() {
                     if (armed != generation) return
                     isReady = false
                     publishSession = null
-                    HyperBleLog.event("Wi-Fi Aware: publishing ended", LogLevel.WARN)
+                    HyperBleLog.event("Wi-Fi Aware: publishing $name ended", LogLevel.WARN)
                 }
 
                 override fun onMessageReceived(peerHandle: PeerHandle, message: ByteArray) {
                     if (armed == generation) discoveryMessage(peerHandle, message)
                 }
+            }, handler)
+        }
+    }
 
-                // --- Paired scheme (experimental); only called on Android 14 and later ---
+    /** The paired-scheme publication (experimental): iPhones pair with it, under the DNS-SD name. */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun publishPaired(session: WifiAwareSession, port: Int) {
+        val config = PublishConfig.Builder()
+            .setServiceName(serviceName)
+            .setServiceSpecificInfo(AwareWire.serviceInfo(instanceId))
+            .setPublishType(PublishConfig.PUBLISH_TYPE_UNSOLICITED)
+            .setPairingConfig(WifiAwareSupport.publisherPairingConfig())
+            .build()
+        val armed = generation
+        guarded("publish") {
+            session.publish(config, object : DiscoverySessionCallback() {
+                override fun onPublishStarted(session: PublishDiscoverySession) {
+                    if (armed != generation) {
+                        session.close()
+                        return
+                    }
+                    pairedPublishSession = session
+                    pairing?.hostIsPublishing = true
+                    HyperBleLog.event("Wi-Fi Aware: publishing $serviceName for paired phones, port $port")
+                }
+
+                override fun onSessionConfigFailed() {
+                    if (armed == generation) HyperBleLog.event("Wi-Fi Aware: publishing $serviceName failed", LogLevel.WARN)
+                }
+
+                override fun onSessionTerminated() {
+                    if (armed != generation) return
+                    pairedPublishSession = null
+                    pairing?.hostIsPublishing = false
+                    HyperBleLog.event("Wi-Fi Aware: publishing $serviceName ended", LogLevel.WARN)
+                }
 
                 override fun onPairingSetupRequestReceived(peerHandle: PeerHandle, requestId: Int) {
-                    if (armed != generation || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
-                    val publish = publishSession ?: return
+                    if (armed != generation) return
+                    val publish = pairedPublishSession ?: return
                     val waiting = pairing
                     if (waiting != null) {
                         waiting.acceptIncoming(publish, peerHandle, requestId)
@@ -310,8 +354,7 @@ internal class WifiAwareHostPath(
         pairing?.hostIsPublishing = false
         pairedNetworks.values.forEach { runCatching { connectivity.unregisterNetworkCallback(it) } }
         pairedNetworks.clear()
-        publishSession?.close()
-        publishSession = null
+        closePublications()
         session?.close()
         session = null
         server?.let { runCatching { it.close() } }
@@ -319,6 +362,13 @@ internal class WifiAwareHostPath(
         unbound.forEach { it.close() }
         unbound.clear()
         links.keys.toList().forEach { drop(it, report = reportLinks, reason = "Wi-Fi Aware unavailable") }
+    }
+
+    private fun closePublications() {
+        publishSession?.close()
+        publishSession = null
+        pairedPublishSession?.close()
+        pairedPublishSession = null
     }
 
     // --- Data paths ---
@@ -373,7 +423,7 @@ internal class WifiAwareHostPath(
      */
     private fun requestPairedDataPath(peer: PeerHandle, alias: String) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || pairedNetworks.containsKey(peer)) return
-        val publish = publishSession ?: return
+        val publish = pairedPublishSession ?: return
         val port = server?.localPort ?: return
         val builder = WifiAwareNetworkSpecifier.Builder(publish, peer)
         val security = WifiAwareSupport.pairedSecurity()

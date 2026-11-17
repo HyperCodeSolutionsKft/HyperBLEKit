@@ -77,6 +77,14 @@ internal object AwareWire {
     /** Whether a message received over BLE is a transport-control message, not a protocol one. */
     fun isControl(message: ByteArray): Boolean = message.isNotEmpty() && message[0].toInt() == CONTROL_MARKER
 
+    /**
+     * The service name two Android phones publish and subscribe to (NAN scheme): the DNS-SD name
+     * without its underscores, `_hyperblekit._tcp` → `hyperblekit.tcp`. Android 10 to 13 allow
+     * only `0-9 a-z A-Z - .` in a Wi-Fi Aware service name and refuse the DNS-SD form; the paired
+     * (iPhone) scheme keeps the DNS-SD name, which iOS requires.
+     */
+    fun nanServiceName(serviceName: String): String = serviceName.replace("_", "")
+
     /** A host's publish `serviceSpecificInfo`: `[version][instanceId]`. */
     fun serviceInfo(instanceId: ByteArray): ByteArray = byteArrayOf(VERSION.toByte()) + instanceId
 

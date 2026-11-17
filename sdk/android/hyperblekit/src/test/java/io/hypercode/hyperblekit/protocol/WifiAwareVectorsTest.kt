@@ -138,6 +138,17 @@ class WifiAwareVectorsTest {
     }
 
     @Test
+    fun `the NAN name drops the underscores Android 10 to 13 refuse`() {
+        val cases = vectors.cases("nanServiceNames")
+        assertTrue(cases.isNotEmpty())
+        for (case in cases) {
+            val nan = AwareWire.nanServiceName(case.getString("name"))
+            assertEquals(case.getString("name"), case.getString("nan"), nan)
+            assertTrue(nan, Regex("[0-9a-zA-Z.-]+").matches(nan))
+        }
+    }
+
+    @Test
     fun `service names follow the safe DNS-SD subset`() {
         for (case in vectors.cases("serviceNames")) {
             val name = case.getString("name")

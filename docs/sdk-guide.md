@@ -1106,7 +1106,7 @@ The last messages of a leaving phone are sent in the background for up to 2 seco
 | `maxPlayers` | 10 | 2 to 10 | Seats in a game, the host included. |
 | `logCapacity` | 500 | at least 1 | Lines kept in the log's buffer. The log is shared by the process, so the kit created last decides. |
 | `dataPaths` | `BLE_ONLY` / `.bleOnly` | `BLE_ONLY`, `PREFER_WIFI_AWARE` (iOS `.bleOnly`, `.preferWiFiAware`) | Whether connected phones may move their messages to Wi-Fi Aware. See [Wi-Fi Aware](#wi-fi-aware). |
-| `wifiAwareServiceName` | `_hyperblekit._tcp` | `_` + 1 to 15 of `a-z 0-9 -` (a letter among them, no hyphen first or last) + `._tcp` | The Wi-Fi Aware service a host publishes. Only used with `PREFER_WIFI_AWARE`. |
+| `wifiAwareServiceName` | `_hyperblekit._tcp` | `_` + 1 to 15 of `a-z 0-9 -` (a letter among them, no hyphen first or last) + `._tcp` | The Wi-Fi Aware service a host publishes. Two Android phones use it without its underscores (`hyperblekit.tcp`), which Android 10 to 13 require; iPhones use it as given. Only used with `PREFER_WIFI_AWARE`. |
 | `experimentalCrossPlatformWifiAware` (iOS `experimentalCrossPlatformWiFiAware`) | `false` | | **Experimental.** Also try Wi-Fi Aware between an Android phone and an iPhone. See [Android ↔ iPhone (experimental)](#android--iphone-experimental). |
 
 A value outside its limits is a programming error: Android throws `IllegalArgumentException`
@@ -1198,6 +1198,11 @@ Declare in the manifest, next to the Bluetooth permissions:
 ```xml
 <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+<!-- The link is a socket over the Wi-Fi Aware network; without this, opening it fails with
+     EACCES and every link stays on BLE. Granted at install; no internet is used. -->
+<uses-permission android:name="android.permission.INTERNET" />
+<!-- Opening the data path is a network request; without this it fails at once. Granted at install. -->
+<uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 <!-- Android 13 and later -->
 <uses-permission
     android:name="android.permission.NEARBY_WIFI_DEVICES"
