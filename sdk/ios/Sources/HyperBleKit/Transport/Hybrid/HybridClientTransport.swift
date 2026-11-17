@@ -13,6 +13,7 @@ import Foundation
 final class HybridClientTransport: GameClientTransport {
     /// A declined client asks this many times in all per connection.
     static let maxHelloAttempts = 3
+    private static let noGameInfo = "no_game_info"
     static let helloRetryDelay: TimeInterval = 10
 
     private enum AwareState { case none, asked, connecting, up }
@@ -28,6 +29,8 @@ final class HybridClientTransport: GameClientTransport {
     private var cancellables = Set<AnyCancellable>()
     /// How the host of the current connection can be reached over Wi-Fi Aware; nil: not at all.
     private var hostScheme: AwareScheme?
+    /// Why `hostScheme` is nil, for the log; see `AwareWire.noSchemeReason`.
+    private var noSchemeReason = HybridClientTransport.noGameInfo
     private var awareState = AwareState.none
     private var maxChunkLength = 0
     private var helloAttempts = 0
@@ -119,6 +122,7 @@ final class HybridClientTransport: GameClientTransport {
         if awareState == .connecting || awareState == .up { aware.close() }
         awareState = .none
         hostScheme = nil
+        noSchemeReason = Self.noGameInfo
         helloAttempts = 0
         gate.reset()
     }
@@ -137,11 +141,12 @@ final class HybridClientTransport: GameClientTransport {
         switch event {
         case .gameInfo(let bytes):
             hostScheme = AwareWire.scheme(for: bytes, platform: platform, crossPlatform: crossPlatform)
+            if hostScheme == nil { noSchemeReason = AwareWire.noSchemeReason(for: bytes, crossPlatform: crossPlatform) }
             events.send(event)
         case .ready(let maxChunkLength):
             self.maxChunkLength = maxChunkLength
             events.send(event)
-            if let scheme = hostScheme, aware.supports(scheme), awareState == .none { sayHello() }
+            if awareState == .none { helloOrSayWhyNot() }
         case .message(let bytes, _):
             if AwareWire.isControl(bytes) { control(bytes) } else { events.send(event) }
         case .disconnected:
@@ -150,6 +155,18 @@ final class HybridClientTransport: GameClientTransport {
             events.send(event)
         case .hostFound, .frame, .log:
             events.send(event)
+        }
+    }
+
+    /// Asks for a data path if both the host and this phone can use one; otherwise logs why not,
+    /// the only trace of a connection that never tried Wi-Fi Aware.
+    private func helloOrSayWhyNot() {
+        let whyNot: String?
+        if let scheme = hostScheme { whyNot = aware.unsupportedReason(scheme) } else { whyNot = noSchemeReason }
+        if let whyNot {
+            log("PATH not asking for Wi-Fi Aware (\(whyNot)), staying on BLE")
+        } else {
+            sayHello()
         }
     }
 

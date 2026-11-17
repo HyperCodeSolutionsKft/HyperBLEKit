@@ -47,11 +47,14 @@ enum TransportFactory {
 
     static func makeAwareClientPath(config: HyperBleKitConfig) -> AwareClientPath {
         #if canImport(WiFiAware) && os(iOS)
-        if #available(iOS 26.0, *), WiFiAwareSupport.isSupported(serviceName: config.wifiAwareServiceName) {
-            return WiFiAwareClientPath(serviceName: config.wifiAwareServiceName)
+        guard #available(iOS 26.0, *) else { return UnsupportedAwareClientPath(reason: "os_too_old") }
+        if let reason = WiFiAwareSupport.unsupportedReason(serviceName: config.wifiAwareServiceName) {
+            return UnsupportedAwareClientPath(reason: reason)
         }
+        return WiFiAwareClientPath(serviceName: config.wifiAwareServiceName)
+        #else
+        return UnsupportedAwareClientPath(reason: "built_without_wifi_aware")
         #endif
-        return UnsupportedAwareClientPath()
     }
 
     /// Whether this iPhone can carry data over Wi-Fi Aware with this config.

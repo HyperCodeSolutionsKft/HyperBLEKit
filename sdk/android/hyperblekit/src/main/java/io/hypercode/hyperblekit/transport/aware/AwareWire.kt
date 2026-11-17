@@ -71,6 +71,13 @@ internal object AwareWire {
         }
     }
 
+    /** Why [schemeFor] is null for [info], as a log token. */
+    fun noSchemeReason(info: ByteArray, crossPlatform: Boolean): String = when {
+        !hasAwareFlag(info) -> "host_not_advertising"
+        !crossPlatform -> "host_other_platform"
+        else -> "host_not_pairing"
+    }
+
     /** The `hostPlatform` value of this build in GameInfo. */
     const val THIS_PLATFORM = "android"
 

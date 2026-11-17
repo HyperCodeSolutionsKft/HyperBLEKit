@@ -78,6 +78,12 @@ internal interface AwareClientPath {
     /** The hardware, the OS version, the permissions and the config allow this scheme. */
     fun supports(scheme: AwareScheme): Boolean
 
+    /**
+     * Why [supports] is false for [scheme], as a short log token (`no_feature`, `no_permission(…)`,
+     * …); null if it is true.
+     */
+    fun unsupportedReason(scheme: AwareScheme): String? = if (supports(scheme)) null else "not_supported"
+
     fun setListener(listener: ((AwareClientEvent) -> Unit)?)
 
     /** Finds the host of [offer] by [scheme] and sets the data path up; ends in [AwareClientEvent.Up] or `Down`. */

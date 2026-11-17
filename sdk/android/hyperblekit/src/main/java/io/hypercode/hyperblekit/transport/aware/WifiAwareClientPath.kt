@@ -77,9 +77,12 @@ internal class WifiAwareClientPath(
     private val triedPeers = HashSet<PeerHandle>()
     private var unpairedLogged = false
 
-    override fun supports(scheme: AwareScheme): Boolean = when (scheme) {
-        AwareScheme.NAN -> WifiAwareSupport.isSupported(appContext)
-        AwareScheme.PAIRED -> crossPlatform && WifiAwareSupport.isPairingSupported(appContext)
+    override fun supports(scheme: AwareScheme): Boolean = unsupportedReason(scheme) == null
+
+    override fun unsupportedReason(scheme: AwareScheme): String? = when (scheme) {
+        AwareScheme.NAN -> WifiAwareSupport.unsupportedReason(appContext)
+        AwareScheme.PAIRED ->
+            if (!crossPlatform) "cross_platform_off" else WifiAwareSupport.pairingUnsupportedReason(appContext)
     }
 
     override fun setListener(listener: ((AwareClientEvent) -> Unit)?) {

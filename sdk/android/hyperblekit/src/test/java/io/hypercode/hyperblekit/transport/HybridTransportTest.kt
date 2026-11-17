@@ -1,6 +1,7 @@
 package io.hypercode.hyperblekit.transport
 
 import io.hypercode.hyperblekit.AdvertisingState
+import io.hypercode.hyperblekit.log.HyperBleLog
 import io.hypercode.hyperblekit.transport.aware.AwareClientEvent
 import io.hypercode.hyperblekit.transport.aware.AwareClientPath
 import io.hypercode.hyperblekit.transport.aware.AwareControl
@@ -73,7 +74,10 @@ class HybridTransportTest {
         var flushThen: (() -> Unit)? = null
         var closes = 0
         var connectedScheme: AwareScheme? = null
-        override fun supports(scheme: AwareScheme) = true
+        /** Why this phone cannot use Wi-Fi Aware; null: it can. */
+        var whyNot: String? = null
+        override fun supports(scheme: AwareScheme) = whyNot == null
+        override fun unsupportedReason(scheme: AwareScheme) = whyNot
         override fun setListener(listener: ((AwareClientEvent) -> Unit)?) {
             this.listener = listener
         }
@@ -133,6 +137,30 @@ class HybridTransportTest {
         ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
         ble.emit(ClientTransportEvent.Ready(CHUNK))
         assertEquals(listOf(AwareControl.Hello()), ble.controls)
+    }
+
+    @Test
+    fun `a client that does not ask for Wi-Fi Aware logs why`() {
+        val lines = mutableListOf<String>()
+        HyperBleLog.sink = { lines += it.message }
+        try {
+            ble.emit(ClientTransportEvent.Ready(CHUNK))
+            ble.emit(ClientTransportEvent.GameInfoRead(bytes("{\"v\":1}")))
+            ble.emit(ClientTransportEvent.Ready(CHUNK))
+            ble.emit(ClientTransportEvent.GameInfoRead(AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"ios\"}"))))
+            ble.emit(ClientTransportEvent.Ready(CHUNK))
+            aware.whyNot = "no_permission(NEARBY_WIFI_DEVICES)"
+            ble.emit(ClientTransportEvent.GameInfoRead(awareInfo))
+            ble.emit(ClientTransportEvent.Ready(CHUNK))
+        } finally {
+            HyperBleLog.sink = null
+        }
+        assertTrue(ble.controls.isEmpty())
+        assertEquals(
+            listOf("no_game_info", "host_not_advertising", "host_other_platform", "no_permission(NEARBY_WIFI_DEVICES)")
+                .map { "PATH not asking for Wi-Fi Aware ($it), staying on BLE" },
+            lines.map { it.removePrefix("-- ") },
+        )
     }
 
     @Test

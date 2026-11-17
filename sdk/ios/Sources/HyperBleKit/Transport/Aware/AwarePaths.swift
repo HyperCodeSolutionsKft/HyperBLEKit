@@ -56,6 +56,9 @@ protocol AwareClientPath: AnyObject {
     var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { get }
     /// The hardware, the OS version, the build and the config allow this scheme.
     func supports(_ scheme: AwareScheme) -> Bool
+    /// Why `supports` is false for `scheme`, as a short log token (`no_feature`, …); nil if it
+    /// is true.
+    func unsupportedReason(_ scheme: AwareScheme) -> String?
     /// Finds the host of `offer` by `scheme` and sets the data path up; ends in `.up` or `.down`.
     func connect(_ offer: AwareOffer, scheme: AwareScheme)
     func send(_ message: Data) -> Bool
@@ -65,6 +68,10 @@ protocol AwareClientPath: AnyObject {
     /// Sends what is queued (for a bounded time), drops the data path without an event, then
     /// calls `completion`.
     func closeAfterFlush(then completion: @escaping () -> Void)
+}
+
+extension AwareClientPath {
+    func unsupportedReason(_ scheme: AwareScheme) -> String? { supports(scheme) ? nil : "not_supported" }
 }
 
 /// Runs a block after a delay on the main thread; the hybrid transports' only timer.
@@ -94,8 +101,12 @@ final class UnsupportedAwareHostPath: AwareHostPath {
 
 /// The client path of a phone without Wi-Fi Aware: never asks for a data path.
 final class UnsupportedAwareClientPath: AwareClientPath {
+    /// Why this iPhone has no Wi-Fi Aware path, for the log; see `TransportFactory`.
+    private let reason: String
+    init(reason: String = "not_supported") { self.reason = reason }
     var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { Empty().eraseToAnyPublisher() }
     func supports(_ scheme: AwareScheme) -> Bool { false }
+    func unsupportedReason(_ scheme: AwareScheme) -> String? { reason }
     func connect(_ offer: AwareOffer, scheme: AwareScheme) {}
     func send(_ message: Data) -> Bool { false }
     func sendFrame(_ payload: Data) -> FrameSendResult { .failed }

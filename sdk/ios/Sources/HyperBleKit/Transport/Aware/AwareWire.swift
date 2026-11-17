@@ -32,6 +32,12 @@ enum AwareWire {
         return nil
     }
 
+    /// Why `scheme(for:)` is nil for `info`, as a log token.
+    static func noSchemeReason(for info: Data, crossPlatform: Bool) -> String {
+        if !hasAwareFlag(info) { return "host_not_advertising" }
+        return crossPlatform ? "host_not_pairing" : "host_other_platform"
+    }
+
     /// Whether a message received over BLE is a transport-control message, not a protocol one.
     static func isControl(_ message: Data) -> Bool {
         message.first == controlMarker

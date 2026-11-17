@@ -119,7 +119,10 @@ class WifiAwareEndToEndTest {
         radio.advance(SHORT)
         bence.joinTheOnlyGame()
 
-        assertTrue(lines.none { "PATH" in it })
+        assertEquals(
+            listOf("PATH not asking for Wi-Fi Aware (host_not_advertising), staying on BLE"),
+            lines.filter { "PATH" in it }.map { it.removePrefix("-- ") },
+        )
         anna.session.startGame(CounterGame.id)
         radio.advance(SHORT)
         playToTheEnd(anna, bence)

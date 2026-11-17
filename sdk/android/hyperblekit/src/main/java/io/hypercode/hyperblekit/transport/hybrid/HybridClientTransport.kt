@@ -42,6 +42,8 @@ internal class HybridClientTransport(
     private var listener: ((ClientTransportEvent) -> Unit)? = null
     /** How the host of the current connection can be reached over Wi-Fi Aware; null: not at all. */
     private var hostScheme: AwareScheme? = null
+    /** Why [hostScheme] is null, for the log; see [AwareWire.noSchemeReason]. */
+    private var noSchemeReason = NO_GAME_INFO
     private var awareState = AwareState.NONE
     private var maxChunkLength = 0
     private var helloAttempts = 0
@@ -132,6 +134,7 @@ internal class HybridClientTransport(
         if (awareState == AwareState.CONNECTING || awareState == AwareState.UP) aware.close()
         awareState = AwareState.NONE
         hostScheme = null
+        noSchemeReason = NO_GAME_INFO
         helloAttempts = 0
         gate.reset()
     }
@@ -146,13 +149,13 @@ internal class HybridClientTransport(
         when (event) {
             is ClientTransportEvent.GameInfoRead -> {
                 hostScheme = AwareWire.schemeFor(event.bytes, platform, crossPlatform)
+                if (hostScheme == null) noSchemeReason = AwareWire.noSchemeReason(event.bytes, crossPlatform)
                 listener?.invoke(event)
             }
             is ClientTransportEvent.Ready -> {
                 maxChunkLength = event.maxChunkLength
                 listener?.invoke(event)
-                val scheme = hostScheme
-                if (scheme != null && aware.supports(scheme) && awareState == AwareState.NONE) sayHello()
+                if (awareState == AwareState.NONE) helloOrSayWhyNot()
             }
             is ClientTransportEvent.MessageReceived ->
                 if (AwareWire.isControl(event.bytes)) control(event.bytes) else listener?.invoke(event)
@@ -163,6 +166,20 @@ internal class HybridClientTransport(
                 listener?.invoke(event)
             }
             is ClientTransportEvent.HostFound, is ClientTransportEvent.FrameReceived -> listener?.invoke(event)
+        }
+    }
+
+    /**
+     * Asks for a data path if both the host and this phone can use one; otherwise logs why not,
+     * the only trace of a connection that never tried Wi-Fi Aware.
+     */
+    private fun helloOrSayWhyNot() {
+        val scheme = hostScheme
+        val whyNot = if (scheme == null) noSchemeReason else aware.unsupportedReason(scheme)
+        if (whyNot == null) {
+            sayHello()
+        } else {
+            HyperBleLog.event("PATH not asking for Wi-Fi Aware ($whyNot), staying on BLE")
         }
     }
 
@@ -238,6 +255,7 @@ internal class HybridClientTransport(
         /** A declined client asks this many times in all per connection. */
         const val MAX_HELLO_ATTEMPTS = 3
         const val HELLO_RETRY_MILLIS = 10_000L
+        private const val NO_GAME_INFO = "no_game_info"
         private const val MILLIS_PER_SECOND = 1_000L
     }
 }

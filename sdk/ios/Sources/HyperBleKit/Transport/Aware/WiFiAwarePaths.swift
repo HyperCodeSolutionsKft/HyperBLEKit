@@ -22,9 +22,17 @@ enum WiFiAwareSupport {
     /// The phone supports Wi-Fi Aware and the app declares `serviceName` as publishable and
     /// subscribable in its Info.plist (`WiFiAwareServices`).
     static func isSupported(serviceName: String) -> Bool {
-        WACapabilities.supportedFeatures.contains(.wifiAware)
-            && WAPublishableService.allServices[serviceName] != nil
-            && WASubscribableService.allServices[serviceName] != nil
+        unsupportedReason(serviceName: serviceName) == nil
+    }
+
+    /// Why `isSupported` is false, as a log token: `no_feature` (no Wi-Fi Aware hardware) or
+    /// `service_not_in_info_plist`; nil if it is true.
+    static func unsupportedReason(serviceName: String) -> String? {
+        if !WACapabilities.supportedFeatures.contains(.wifiAware) { return "no_feature" }
+        if WAPublishableService.allServices[serviceName] == nil || WASubscribableService.allServices[serviceName] == nil {
+            return "service_not_in_info_plist"
+        }
+        return nil
     }
 
     /// How long a client tries to reach its host, from `connect`.
@@ -276,7 +284,11 @@ final class WiFiAwareClientPath: AwareClientPath {
 
     /// An iPhone reaches any host by the paired scheme only.
     func supports(_ scheme: AwareScheme) -> Bool {
-        scheme == .paired && WiFiAwareSupport.isSupported(serviceName: serviceName)
+        unsupportedReason(scheme) == nil
+    }
+
+    func unsupportedReason(_ scheme: AwareScheme) -> String? {
+        scheme == .paired ? WiFiAwareSupport.unsupportedReason(serviceName: serviceName) : "no_nan_scheme"
     }
 
     func connect(_ offer: AwareOffer, scheme: AwareScheme) {

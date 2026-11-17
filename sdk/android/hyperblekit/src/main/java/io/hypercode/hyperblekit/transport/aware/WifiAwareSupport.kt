@@ -38,12 +38,20 @@ internal object WifiAwareSupport {
         }
 
     /** The phone has Wi-Fi Aware, the Android version is recent enough, and the permissions are granted. */
-    fun isSupported(context: Context): Boolean =
-        Build.VERSION.SDK_INT >= MIN_SDK &&
-            context.packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_AWARE) &&
-            (permissions() + INSTALL_TIME_PERMISSIONS).all {
-                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-            }
+    fun isSupported(context: Context): Boolean = unsupportedReason(context) == null
+
+    /**
+     * Why [isSupported] is false, as a log token: `os_too_old`, `no_feature` (no Wi-Fi Aware
+     * hardware) or `no_permission(<names>)`; null if it is true.
+     */
+    fun unsupportedReason(context: Context): String? {
+        if (Build.VERSION.SDK_INT < MIN_SDK) return "os_too_old"
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_AWARE)) return "no_feature"
+        val missing = (permissions() + INSTALL_TIME_PERMISSIONS).filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        return if (missing.isEmpty()) null else "no_permission(${missing.joinToString(",") { it.substringAfterLast('.') }})"
+    }
 
     /** [isSupported], and Wi-Fi Aware can be used right now (Wi-Fi on, no hotspot or other conflict). */
     @SuppressLint("MissingPermission") // ACCESS_WIFI_STATE is checked by isSupported first.
@@ -54,11 +62,21 @@ internal object WifiAwareSupport {
      * [isSupported], Android 14 or later, and a Wi-Fi chip that supports Wi-Fi Aware pairing (Wi-Fi
      * Aware 4.0), which the paired (iPhone) scheme needs.
      */
-    @SuppressLint("MissingPermission") // ACCESS_WIFI_STATE is checked by isSupported first.
-    fun isPairingSupported(context: Context): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-            isSupported(context) &&
-            manager(context)?.characteristics?.isAwarePairingSupported == true
+    fun isPairingSupported(context: Context): Boolean = pairingUnsupportedReason(context) == null
+
+    /**
+     * Why [isPairingSupported] is false, as a log token: one of [unsupportedReason]'s,
+     * `os_too_old_for_pairing` (before Android 14) or `no_pairing_support` (the chip lacks it); null
+     * if it is true.
+     */
+    @SuppressLint("MissingPermission") // ACCESS_WIFI_STATE is checked by unsupportedReason first.
+    fun pairingUnsupportedReason(context: Context): String? =
+        unsupportedReason(context)
+            ?: when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> "os_too_old_for_pairing"
+                manager(context)?.characteristics?.isAwarePairingSupported != true -> "no_pairing_support"
+                else -> null
+            }
 
     /** A publication that a phone can pair with by typing the code this one shows, and verify later. */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -152,6 +170,8 @@ internal object UnsupportedAwareHostPath : AwareHostPath {
 /** The client path of a phone without Wi-Fi Aware: never asks for a data path. */
 internal object UnsupportedAwareClientPath : AwareClientPath {
     override fun supports(scheme: AwareScheme) = false
+    // Only built before Android 10 (see HyperBleKit.awareClientPath).
+    override fun unsupportedReason(scheme: AwareScheme) = "os_too_old"
     override fun setListener(listener: ((AwareClientEvent) -> Unit)?) = Unit
     override fun connect(offer: AwareOffer, scheme: AwareScheme) = Unit
     override fun send(message: ByteArray) = false

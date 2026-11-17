@@ -43,7 +43,10 @@ final class HybridTransportTests: XCTestCase {
         var sent: [Data] = []
         var flushCompletion: (() -> Void)?
         var eventsPublisher: AnyPublisher<AwareClientEvent, Never> { events.eraseToAnyPublisher() }
-        func supports(_ scheme: AwareScheme) -> Bool { true }
+        /// Why this phone cannot use Wi-Fi Aware; nil: it can.
+        var whyNot: String?
+        func supports(_ scheme: AwareScheme) -> Bool { whyNot == nil }
+        func unsupportedReason(_ scheme: AwareScheme) -> String? { whyNot }
         func connect(_ offer: AwareOffer, scheme: AwareScheme) {
             connectedTo = offer
             connectedScheme = scheme
@@ -98,6 +101,24 @@ final class HybridTransportTests: XCTestCase {
         ble.events.send(.gameInfo(awareInfo))
         ble.events.send(.ready(maxChunkLength: Self.chunk))
         XCTAssertEqual(ble.controls, [.hello])
+    }
+
+    func testAClientThatDoesNotAskForWiFiAwareLogsWhy() {
+        var lines: [String] = []
+        client.eventsPublisher.sink { event in
+            if case .log(let text) = event { lines.append(text) }
+        }.store(in: &cancellables)
+        ble.events.send(.ready(maxChunkLength: Self.chunk))
+        ble.events.send(.gameInfo(bytes("{\"v\":1}")))
+        ble.events.send(.ready(maxChunkLength: Self.chunk))
+        ble.events.send(.gameInfo(AwareWire.withAwareFlag(bytes("{\"v\":1,\"hostPlatform\":\"android\"}"))))
+        ble.events.send(.ready(maxChunkLength: Self.chunk))
+        aware.whyNot = "no_feature"
+        ble.events.send(.gameInfo(awareInfo))
+        ble.events.send(.ready(maxChunkLength: Self.chunk))
+        XCTAssertTrue(ble.controls.isEmpty)
+        XCTAssertEqual(lines, ["no_game_info", "host_not_advertising", "host_other_platform", "no_feature"]
+            .map { "PATH not asking for Wi-Fi Aware (\($0)), staying on BLE" })
     }
 
     func testAHostOnTheOtherPlatformIsAskedOnlyWithTheExperimentalOption() {
